@@ -20,18 +20,17 @@ builds:
 
 kos:
 - repositories:
-  - "ghcr.io/appkins-org/{{.ProjectName}}"
-  - "appkins-org/{{.ProjectName}}"
+  - "ghcr.io/{{.Env.REPO}}"
   - "{{.Env.REPO}}"
   tags:
   - latest
   - "{{.ShortCommit}}"
   - "{{if not .IsSnapshot}}{{.Version}}{{end}}"
-  bare: false
+  bare: true
   preserve_import_paths: false
   platforms:
   - linux/amd64
   - linux/arm64
   disable: false
   base_image: docker.io/chainguard/static
-  local_domain: ghcr.io
+  local_domain: "ghcr.io/appkins-org/helm-api"
