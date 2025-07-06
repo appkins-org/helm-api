@@ -27,7 +27,7 @@ kos:
   - linux/amd64
   - linux/arm64
   disable: false
-  base_image: scratch
+  base_image: docker.io/chainguard/static
   local_domain: ghcr.io
 
 docker_signs:
