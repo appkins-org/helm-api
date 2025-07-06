@@ -3,6 +3,7 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -18,55 +19,55 @@ import (
 // TemplateRequest represents the JSON payload for the template endpoint.
 type TemplateRequest struct {
 	// Chart specifies the chart to template (required)
-	Chart string `json:"chart"`
+	Chart string `json:"chart" schema:"chart,required"`
 
 	// ChartVersion specifies the version of the chart (optional)
-	ChartVersion string `json:"chart_version,omitempty"`
+	ChartVersion string `json:"chart_version,omitempty" schema:"chart_version"`
 
 	// Repository specifies the chart repository URL (optional)
-	Repository string `json:"repository,omitempty"`
+	Repository string `json:"repository,omitempty" schema:"repository"`
 
 	// ReleaseName is the name of the release (optional, defaults to "release-name")
-	ReleaseName string `json:"release_name,omitempty"`
+	ReleaseName string `json:"release_name,omitempty" schema:"release_name"`
 
 	// Namespace is the target namespace (optional, defaults to "default")
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"namespace,omitempty" schema:"namespace"`
 
 	// Values contains the values to use for templating
-	Values map[string]any `json:"values,omitempty"`
+	Values []string `json:"values,omitempty" schema:"set"`
 
 	// ValueFiles contains paths to values files
-	ValueFiles []string `json:"value_files,omitempty"`
+	ValueFiles []string `json:"value_files,omitempty" schema:"values"`
 
 	// StringValues contains values as strings (--set equivalent)
-	StringValues []string `json:"string_values,omitempty"`
+	StringValues []string `json:"string_values,omitempty" schema:"set_string"`
 
 	// FileValues contains values from files (--set-file equivalent)
-	FileValues []string `json:"file_values,omitempty"`
+	FileValues []string `json:"file_values,omitempty" schema:"set_file"`
 
 	// JSONValues contains values from JSON strings (--set-json equivalent)
-	JSONValues []string `json:"json_values,omitempty"`
+	JSONValues []string `json:"json_values,omitempty" schema:"set_json"`
 
 	// IncludeCRDs indicates whether to include CRDs in output
-	IncludeCRDs bool `json:"include_crds,omitempty"`
+	IncludeCRDs bool `json:"include_crds,omitempty" schema:"include_crds"`
 
 	// SkipTests indicates whether to skip test manifests
-	SkipTests bool `json:"skip_tests,omitempty"`
+	SkipTests bool `json:"skip_tests,omitempty" schema:"skip_tests"`
 
 	// ShowOnly limits output to specific templates
-	ShowOnly []string `json:"show_only,omitempty"`
+	ShowOnly []string `json:"show_only,omitempty" schema:"show_only"`
 
 	// KubeVersion specifies the Kubernetes version for capabilities
-	KubeVersion string `json:"kube_version,omitempty"`
+	KubeVersion string `json:"kube_version,omitempty" schema:"kube_version"`
 
 	// APIVersions specifies additional API versions for capabilities
-	APIVersions []string `json:"api_versions,omitempty"`
+	APIVersions []string `json:"api_versions,omitempty" schema:"api_versions"`
 
 	// IsUpgrade sets .Release.IsUpgrade instead of .Release.IsInstall
-	IsUpgrade bool `json:"is_upgrade,omitempty"`
+	IsUpgrade bool `json:"is_upgrade,omitempty" schema:"is_upgrade"`
 
 	// Validate enables manifest validation
-	Validate bool `json:"validate,omitempty"`
+	Validate bool `json:"validate,omitempty" schema:"validate"`
 }
 
 // ProcessTemplate processes a Helm template request and returns the rendered YAML.
@@ -86,6 +87,17 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	// Create Helm configuration
 	settings := cli.New()
 	actionConfig := new(action.Configuration)
+
+	settings.PluginsDirectory = "/tmp/.plugins" // Disable plugins directory for client-only mode
+	settings.RepositoryCache = "/tmp/.cache"    // Disable repository cache for client-only mode
+
+	if err := os.MkdirAll(settings.PluginsDirectory, 0775); err != nil {
+		return "", fmt.Errorf("failed to create plugins directory: %w", err)
+	}
+
+	if err := os.MkdirAll(settings.RepositoryCache, 0775); err != nil {
+		return "", fmt.Errorf("failed to create repository cache directory: %w", err)
+	}
 
 	// Initialize action configuration for client-only mode (no cluster connection)
 	if err := actionConfig.Init(nil, req.Namespace, "memory", debug); err != nil {
@@ -126,6 +138,7 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	// Prepare values
 	valueOpts := &values.Options{
 		ValueFiles:   req.ValueFiles,
+		Values:       req.Values,
 		StringValues: req.StringValues,
 		FileValues:   req.FileValues,
 		JSONValues:   req.JSONValues,
@@ -135,11 +148,6 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	vals, err := valueOpts.MergeValues(getter.All(settings))
 	if err != nil {
 		return "", fmt.Errorf("failed to merge values: %w", err)
-	}
-
-	// Merge with provided values map
-	if req.Values != nil {
-		vals = mergeMaps(vals, req.Values)
 	}
 
 	// Configure chart path options for repository support

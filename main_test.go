@@ -95,9 +95,9 @@ func TestTemplateEndpointInvalidRequest(t *testing.T) {
 		t.Fatalf("Failed to parse error response as JSON: %v, body: %s", err, rr.Body.String())
 	}
 
-	if !strings.Contains(response["error"], "chart parameter is required") {
+	if !strings.Contains(response["error"], "chart is empty") {
 		t.Errorf(
-			"Expected 'chart parameter is required' in error message, got: %s",
+			"Expected 'chart is empty' in error message, got: %s",
 			response["error"],
 		)
 	}
@@ -130,9 +130,9 @@ func TestTemplateEndpointMissingChart(t *testing.T) {
 		t.Fatalf("Failed to parse error response as JSON: %v, body: %s", err, rr.Body.String())
 	}
 
-	if !strings.Contains(response["error"], "chart parameter is required") {
+	if !strings.Contains(response["error"], "chart is empty") {
 		t.Errorf(
-			"Expected 'chart parameter is required' in error message, got: %s",
+			"Expected 'chart is empty' in error message, got: %s",
 			response["error"],
 		)
 	}
@@ -286,10 +286,10 @@ func TestParseTemplateRequest(t *testing.T) {
 			expectError: false,
 			expected: func(req template.TemplateRequest) bool {
 				return req.Chart == "test-chart" &&
-					len(req.StringValues) == 3 &&
-					req.StringValues[0] == "key1=value1" &&
-					req.StringValues[1] == "key2=value2" &&
-					req.StringValues[2] == "nested.key=value3"
+					len(req.Values) == 3 &&
+					req.Values[0] == "key1=value1" &&
+					req.Values[1] == "key2=value2" &&
+					req.Values[2] == "nested.key=value3"
 			},
 		},
 		{
@@ -346,7 +346,7 @@ func TestParseTemplateRequest(t *testing.T) {
 					t.Errorf("Unexpected error: %v", err)
 				}
 				if tt.expected != nil && !tt.expected(req) {
-					t.Error("Request did not match expected values")
+					t.Errorf("Request did not match expected values for %s", tt.name)
 				}
 			}
 		})

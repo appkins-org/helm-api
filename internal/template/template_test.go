@@ -31,19 +31,14 @@ func TestTemplateRequestValidation(t *testing.T) {
 		{
 			name: "valid full request",
 			req: TemplateRequest{
-				Chart:       "test-chart",
-				ReleaseName: "my-release",
-				Namespace:   "custom-ns",
-				KubeVersion: "v1.29.0",
-				IncludeCRDs: true,
-				SkipTests:   true,
-				IsUpgrade:   false,
-				Values: map[string]any{
-					"replicaCount": 3,
-					"image": map[string]any{
-						"tag": "latest",
-					},
-				},
+				Chart:        "test-chart",
+				ReleaseName:  "my-release",
+				Namespace:    "custom-ns",
+				KubeVersion:  "v1.29.0",
+				IncludeCRDs:  true,
+				SkipTests:    true,
+				IsUpgrade:    false,
+				Values:       []string{"replicaCount=3", "image.tag=latest"},
 				StringValues: []string{"key1=value1", "key2=value2"},
 				APIVersions:  []string{"apps/v1", "networking.k8s.io/v1"},
 			},
@@ -348,9 +343,7 @@ spec:
 		Chart:       chartDir,
 		ReleaseName: "test-release",
 		Namespace:   "test-ns",
-		Values: map[string]any{
-			"replicaCount": 2,
-		},
+		Values:      []string{"replicaCount=2"},
 	}
 
 	result, err := ProcessTemplate(req)

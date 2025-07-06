@@ -2,14 +2,16 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/appkins-org/helm-api/internal/template"
+	"github.com/gorilla/schema"
 )
+
+var decoder = schema.NewDecoder()
 
 func main() {
 	port := os.Getenv("PORT")
@@ -88,75 +90,9 @@ func parseTemplateRequest(r *http.Request) (template.TemplateRequest, error) {
 
 	req := template.TemplateRequest{}
 
-	// Required parameter: chart
-	chart := query.Get("chart")
-	if chart == "" {
-		return req, fmt.Errorf("chart parameter is required")
+	err := decoder.Decode(&req, query)
+	if err != nil {
+		return req, err
 	}
-	req.Chart = chart
-
-	// Optional parameters
-	if releaseName := query.Get("release_name"); releaseName != "" {
-		req.ReleaseName = releaseName
-	}
-
-	if namespace := query.Get("namespace"); namespace != "" {
-		req.Namespace = namespace
-	}
-
-	if kubeVersion := query.Get("kube_version"); kubeVersion != "" {
-		req.KubeVersion = kubeVersion
-	}
-
-	if chartVersion := query.Get("chart_version"); chartVersion != "" {
-		req.ChartVersion = chartVersion
-	}
-
-	if repository := query.Get("repository"); repository != "" {
-		req.Repository = repository
-	}
-
-	// Boolean parameters
-	if includeCRDs := query.Get("include_crds"); includeCRDs == "true" {
-		req.IncludeCRDs = true
-	}
-
-	if skipTests := query.Get("skip_tests"); skipTests == "true" {
-		req.SkipTests = true
-	}
-
-	if isUpgrade := query.Get("is_upgrade"); isUpgrade == "true" {
-		req.IsUpgrade = true
-	}
-
-	if validate := query.Get("validate"); validate == "true" {
-		req.Validate = true
-	}
-
-	// Array parameters
-	if setValues := query["set"]; len(setValues) > 0 {
-		req.StringValues = setValues
-	}
-
-	if valueFiles := query["value_files"]; len(valueFiles) > 0 {
-		req.ValueFiles = valueFiles
-	}
-
-	if fileValues := query["file_values"]; len(fileValues) > 0 {
-		req.FileValues = fileValues
-	}
-
-	if jsonValues := query["json_values"]; len(jsonValues) > 0 {
-		req.JSONValues = jsonValues
-	}
-
-	if showOnly := query["show_only"]; len(showOnly) > 0 {
-		req.ShowOnly = showOnly
-	}
-
-	if apiVersions := query["api_versions"]; len(apiVersions) > 0 {
-		req.APIVersions = apiVersions
-	}
-
 	return req, nil
 }
