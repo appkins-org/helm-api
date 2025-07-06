@@ -18,14 +18,16 @@ builds:
 kos:
 - repositories: ["ghcr.io/appkins-org/{{.ProjectName}}"]
   tags:
-  - "{{.Version}}"
   - latest
-  bare: true
+  - "{{.ShortCommit}}"
+  - "{{if not .IsSnapshot}}{{.Version}}{{end}}"
+  bare: false
   preserve_import_paths: false
   platforms:
   - linux/amd64
   - linux/arm64
   disable: false
+  base_image: scratch
 
 docker_signs:
 - artifacts: manifests
