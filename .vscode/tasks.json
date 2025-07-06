@@ -1,0 +1,14 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build",
+			"type": "shell",
+			"command": "go build -o helm-api .",
+			"group": "build",
+			"problemMatcher": [
+				"$go"
+			]
+		}
+	]
+}
