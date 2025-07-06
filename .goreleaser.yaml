@@ -28,6 +28,7 @@ kos:
   - linux/arm64
   disable: false
   base_image: scratch
+  local_domain: ghcr.io
 
 docker_signs:
 - artifacts: manifests
