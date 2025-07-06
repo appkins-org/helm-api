@@ -68,6 +68,9 @@ type TemplateRequest struct {
 
 	// Validate enables manifest validation
 	Validate bool `json:"validate,omitempty" schema:"validate"`
+
+	// CreateNamespace indicates whether to create the namespace if it doesn't exist
+	CreateNamespace bool `json:"create_namespace,omitempty" schema:"create_namespace,default:true"`
 }
 
 // ProcessTemplate processes a Helm template request and returns the rendered YAML.
@@ -113,6 +116,7 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	client.Replace = true
 	client.IncludeCRDs = req.IncludeCRDs
 	client.IsUpgrade = req.IsUpgrade
+	client.CreateNamespace = req.CreateNamespace
 
 	// Set Kubernetes version if provided, otherwise use latest stable
 	if req.KubeVersion != "" {
