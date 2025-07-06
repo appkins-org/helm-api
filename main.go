@@ -90,6 +90,7 @@ func parseTemplateRequest(r *http.Request) (template.TemplateRequest, error) {
 
 	req := template.TemplateRequest{}
 
+	// First try to decode with the schema decoder
 	err := decoder.Decode(&req, query)
 	if err != nil {
 		return req, err
