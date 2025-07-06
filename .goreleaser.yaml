@@ -29,6 +29,3 @@ kos:
   disable: false
   base_image: docker.io/chainguard/static
   local_domain: ghcr.io
-
-docker_signs:
-- artifacts: manifests
