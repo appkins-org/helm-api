@@ -33,7 +33,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		"version": "1.0.0",
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +41,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func handleTemplate(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +56,7 @@ func handleTemplate(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		errorResponse := map[string]string{"error": err.Error()}
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errorResponse)
+		_ = json.NewEncoder(w).Encode(errorResponse)
 		return
 	}
 
@@ -68,21 +68,21 @@ func handleTemplate(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			errorResponse := map[string]string{"error": err.Error()}
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(errorResponse)
+			_ = json.NewEncoder(w).Encode(errorResponse)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		errorResponse := map[string]string{"error": err.Error()}
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse)
+		_ = json.NewEncoder(w).Encode(errorResponse)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/x-yaml")
-	w.Write([]byte(result))
+	_, _ = w.Write([]byte(result))
 }
 
-// parseTemplateRequest parses HTTP query parameters into a TemplateRequest
+// parseTemplateRequest parses HTTP query parameters into a TemplateRequest.
 func parseTemplateRequest(r *http.Request) (template.TemplateRequest, error) {
 	query := r.URL.Query()
 

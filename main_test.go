@@ -55,7 +55,10 @@ func TestTemplateEndpointSuccess(t *testing.T) {
 	if rr.Code == http.StatusOK {
 		// If successful, check content type
 		if rr.Header().Get("Content-Type") != "application/x-yaml" {
-			t.Errorf("Expected Content-Type application/x-yaml, got %s", rr.Header().Get("Content-Type"))
+			t.Errorf(
+				"Expected Content-Type application/x-yaml, got %s",
+				rr.Header().Get("Content-Type"),
+			)
 		}
 	} else {
 		// If failed (which is expected), check it's a proper error response
@@ -93,7 +96,10 @@ func TestTemplateEndpointInvalidRequest(t *testing.T) {
 	}
 
 	if !strings.Contains(response["error"], "chart parameter is required") {
-		t.Errorf("Expected 'chart parameter is required' in error message, got: %s", response["error"])
+		t.Errorf(
+			"Expected 'chart parameter is required' in error message, got: %s",
+			response["error"],
+		)
 	}
 }
 
@@ -125,7 +131,10 @@ func TestTemplateEndpointMissingChart(t *testing.T) {
 	}
 
 	if !strings.Contains(response["error"], "chart parameter is required") {
-		t.Errorf("Expected 'chart parameter is required' in error message, got: %s", response["error"])
+		t.Errorf(
+			"Expected 'chart parameter is required' in error message, got: %s",
+			response["error"],
+		)
 	}
 }
 
@@ -163,12 +172,15 @@ func TestTemplateEndpointWithSetValues(t *testing.T) {
 	// Since the chart likely doesn't exist, we expect an error response
 	if rr.Code != http.StatusOK && rr.Code != http.StatusInternalServerError {
 		if rr.Header().Get("Content-Type") != "application/json" {
-			t.Errorf("Expected Content-Type application/json for error, got %s", rr.Header().Get("Content-Type"))
+			t.Errorf(
+				"Expected Content-Type application/json for error, got %s",
+				rr.Header().Get("Content-Type"),
+			)
 		}
 	}
 }
 
-// TestMockHTTPServer creates a full mock HTTP server for integration testing
+// TestMockHTTPServer creates a full mock HTTP server for integration testing.
 func TestMockHTTPServer(t *testing.T) {
 	// Create a new HTTP server with our routes
 	mux := http.NewServeMux()
@@ -183,7 +195,9 @@ func TestMockHTTPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Health endpoint returned status %d, expected %d", resp.StatusCode, http.StatusOK)
@@ -193,14 +207,20 @@ func TestMockHTTPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("Template endpoint returned status %d, expected %d", resp.StatusCode, http.StatusBadRequest)
+		t.Errorf(
+			"Template endpoint returned status %d, expected %d",
+			resp.StatusCode,
+			http.StatusBadRequest,
+		)
 	}
 }
 
-// BenchmarkHealthHandler benchmarks the health endpoint
+// BenchmarkHealthHandler benchmarks the health endpoint.
 func BenchmarkHealthHandler(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/health", nil)
 
@@ -211,7 +231,7 @@ func BenchmarkHealthHandler(b *testing.B) {
 	}
 }
 
-// BenchmarkTemplateHandler benchmarks the template endpoint
+// BenchmarkTemplateHandler benchmarks the template endpoint.
 func BenchmarkTemplateHandler(b *testing.B) {
 	url := "/template?chart=nginx&release_name=test"
 
@@ -224,7 +244,7 @@ func BenchmarkTemplateHandler(b *testing.B) {
 	}
 }
 
-// TestParseTemplateRequest tests the query parameter parsing functionality
+// TestParseTemplateRequest tests the query parameter parsing functionality.
 func TestParseTemplateRequest(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -333,7 +353,7 @@ func TestParseTemplateRequest(t *testing.T) {
 	}
 }
 
-// TestTemplateEndpointWithRepository tests the template endpoint with repository parameters
+// TestTemplateEndpointWithRepository tests the template endpoint with repository parameters.
 func TestTemplateEndpointWithRepository(t *testing.T) {
 	// Test with repository and chart version
 	url := "/template?chart=nginx&repository=https://charts.bitnami.com/bitnami&chart_version=15.0.0&release_name=repo-test"
@@ -352,12 +372,15 @@ func TestTemplateEndpointWithRepository(t *testing.T) {
 	// but the important thing is that the parameters are parsed correctly
 	if rr.Code != http.StatusOK && rr.Code != http.StatusInternalServerError {
 		if rr.Header().Get("Content-Type") != "application/json" {
-			t.Errorf("Expected Content-Type application/json for error, got %s", rr.Header().Get("Content-Type"))
+			t.Errorf(
+				"Expected Content-Type application/json for error, got %s",
+				rr.Header().Get("Content-Type"),
+			)
 		}
 	}
 }
 
-// TestTemplateEndpointWithOCI tests the template endpoint with OCI chart
+// TestTemplateEndpointWithOCI tests the template endpoint with OCI chart.
 func TestTemplateEndpointWithOCI(t *testing.T) {
 	// Test with OCI chart
 	url := "/template?chart=oci://registry-1.docker.io/bitnamicharts/nginx&chart_version=15.0.0&release_name=oci-test"
@@ -376,19 +399,22 @@ func TestTemplateEndpointWithOCI(t *testing.T) {
 	// but the important thing is that the parameters are parsed correctly
 	if rr.Code != http.StatusOK && rr.Code != http.StatusInternalServerError {
 		if rr.Header().Get("Content-Type") != "application/json" {
-			t.Errorf("Expected Content-Type application/json for error, got %s", rr.Header().Get("Content-Type"))
+			t.Errorf(
+				"Expected Content-Type application/json for error, got %s",
+				rr.Header().Get("Content-Type"),
+			)
 		}
 	}
 }
 
-// TestTemplateEndpointValidYAML tests that the API returns valid YAML
+// TestTemplateEndpointValidYAML tests that the API returns valid YAML.
 func TestTemplateEndpointValidYAML(t *testing.T) {
 	// Create a temporary test chart
 	tempDir := t.TempDir()
 	chartDir := tempDir + "/test-chart"
 
 	// Create chart directory structure
-	err := os.MkdirAll(chartDir+"/templates", 0755)
+	err := os.MkdirAll(chartDir+"/templates", 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +427,7 @@ type: application
 version: 0.1.0
 appVersion: "1.0"
 `
-	err = os.WriteFile(chartDir+"/Chart.yaml", []byte(chartYaml), 0644)
+	err = os.WriteFile(chartDir+"/Chart.yaml", []byte(chartYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +438,7 @@ image:
   repository: nginx
   tag: latest
 `
-	err = os.WriteFile(chartDir+"/values.yaml", []byte(valuesYaml), 0644)
+	err = os.WriteFile(chartDir+"/values.yaml", []byte(valuesYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +466,7 @@ spec:
         ports:
         - containerPort: 80
 `
-	err = os.WriteFile(chartDir+"/templates/deployment.yaml", []byte(deploymentTemplate), 0644)
+	err = os.WriteFile(chartDir+"/templates/deployment.yaml", []byte(deploymentTemplate), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +492,10 @@ spec:
 
 	// Check content type
 	if rr.Header().Get("Content-Type") != "application/x-yaml" {
-		t.Errorf("Expected Content-Type application/x-yaml, got %s", rr.Header().Get("Content-Type"))
+		t.Errorf(
+			"Expected Content-Type application/x-yaml, got %s",
+			rr.Header().Get("Content-Type"),
+		)
 	}
 
 	// Get the response body
@@ -479,7 +508,7 @@ spec:
 	}
 
 	// Parse the YAML to verify it's valid
-	var yamlData interface{}
+	var yamlData any
 	err = yaml.Unmarshal([]byte(yamlContent), &yamlData)
 	if err != nil {
 		t.Errorf("Response is not valid YAML: %v\nContent: %s", err, yamlContent)
@@ -502,14 +531,14 @@ spec:
 	t.Logf("Successfully generated valid YAML:\n%s", yamlContent)
 }
 
-// TestTemplateEndpointValidYAMLWithSetValues tests YAML output with custom values
+// TestTemplateEndpointValidYAMLWithSetValues tests YAML output with custom values.
 func TestTemplateEndpointValidYAMLWithSetValues(t *testing.T) {
 	// Create a temporary test chart
 	tempDir := t.TempDir()
 	chartDir := tempDir + "/test-chart"
 
 	// Create chart directory structure
-	err := os.MkdirAll(chartDir+"/templates", 0755)
+	err := os.MkdirAll(chartDir+"/templates", 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +551,7 @@ type: application
 version: 0.1.0
 appVersion: "1.0"
 `
-	err = os.WriteFile(chartDir+"/Chart.yaml", []byte(chartYaml), 0644)
+	err = os.WriteFile(chartDir+"/Chart.yaml", []byte(chartYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +565,7 @@ service:
   type: ClusterIP
   port: 80
 `
-	err = os.WriteFile(chartDir+"/values.yaml", []byte(valuesYaml), 0644)
+	err = os.WriteFile(chartDir+"/values.yaml", []byte(valuesYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +594,7 @@ spec:
         ports:
         - containerPort: {{ .Values.service.port }}
 `
-	err = os.WriteFile(chartDir+"/templates/deployment.yaml", []byte(deploymentTemplate), 0644)
+	err = os.WriteFile(chartDir+"/templates/deployment.yaml", []byte(deploymentTemplate), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +622,7 @@ spec:
 	yamlContent := rr.Body.String()
 
 	// Parse the YAML to verify it's valid
-	var yamlData interface{}
+	var yamlData any
 	err = yaml.Unmarshal([]byte(yamlContent), &yamlData)
 	if err != nil {
 		t.Errorf("Response is not valid YAML: %v\nContent: %s", err, yamlContent)
@@ -620,7 +649,7 @@ spec:
 	t.Logf("Successfully generated valid YAML with custom values:\n%s", yamlContent)
 }
 
-// TestTemplateEndpointErrorReturnsJSON verifies that errors return JSON, not YAML
+// TestTemplateEndpointErrorReturnsJSON verifies that errors return JSON, not YAML.
 func TestTemplateEndpointErrorReturnsJSON(t *testing.T) {
 	// Test with a non-existent chart
 	url := "/template?chart=/non/existent/chart&release_name=test"
@@ -643,7 +672,10 @@ func TestTemplateEndpointErrorReturnsJSON(t *testing.T) {
 
 	// Should have JSON content type
 	if rr.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("Expected Content-Type application/json for error, got %s", rr.Header().Get("Content-Type"))
+		t.Errorf(
+			"Expected Content-Type application/json for error, got %s",
+			rr.Header().Get("Content-Type"),
+		)
 	}
 
 	// Response should be valid JSON
@@ -660,7 +692,8 @@ func TestTemplateEndpointErrorReturnsJSON(t *testing.T) {
 	}
 
 	// Should NOT be valid YAML (to ensure we're not accidentally returning YAML for errors)
-	if strings.Contains(rr.Body.String(), "apiVersion:") || strings.Contains(rr.Body.String(), "kind:") {
+	if strings.Contains(rr.Body.String(), "apiVersion:") ||
+		strings.Contains(rr.Body.String(), "kind:") {
 		t.Error("Error response appears to contain YAML instead of JSON")
 	}
 

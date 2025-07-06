@@ -38,9 +38,9 @@ func TestTemplateRequestValidation(t *testing.T) {
 				IncludeCRDs: true,
 				SkipTests:   true,
 				IsUpgrade:   false,
-				Values: map[string]interface{}{
+				Values: map[string]any{
 					"replicaCount": 3,
-					"image": map[string]interface{}{
+					"image": map[string]any{
 						"tag": "latest",
 					},
 				},
@@ -148,21 +148,21 @@ func TestParseKubeVersion(t *testing.T) {
 func TestMergeMaps(t *testing.T) {
 	tests := []struct {
 		name     string
-		mapA     map[string]interface{}
-		mapB     map[string]interface{}
-		expected map[string]interface{}
+		mapA     map[string]any
+		mapB     map[string]any
+		expected map[string]any
 	}{
 		{
 			name: "merge simple maps",
-			mapA: map[string]interface{}{
+			mapA: map[string]any{
 				"key1": "value1",
 				"key2": "value2",
 			},
-			mapB: map[string]interface{}{
+			mapB: map[string]any{
 				"key2": "newvalue2",
 				"key3": "value3",
 			},
-			expected: map[string]interface{}{
+			expected: map[string]any{
 				"key1": "value1",
 				"key2": "newvalue2", // B takes precedence
 				"key3": "value3",
@@ -170,17 +170,17 @@ func TestMergeMaps(t *testing.T) {
 		},
 		{
 			name:     "merge empty maps",
-			mapA:     map[string]interface{}{},
-			mapB:     map[string]interface{}{},
-			expected: map[string]interface{}{},
+			mapA:     map[string]any{},
+			mapB:     map[string]any{},
+			expected: map[string]any{},
 		},
 		{
 			name: "merge with nil map",
-			mapA: map[string]interface{}{
+			mapA: map[string]any{
 				"key1": "value1",
 			},
 			mapB: nil,
-			expected: map[string]interface{}{
+			expected: map[string]any{
 				"key1": "value1",
 			},
 		},
@@ -231,22 +231,24 @@ func TestDebugFunction(t *testing.T) {
 	debug("test message with args: %s %d", "hello", 123)
 
 	// Test with debug enabled
-	os.Setenv("HELM_DEBUG", "true")
+	_ = os.Setenv("HELM_DEBUG", "true")
 	debug("debug enabled message")
-	os.Unsetenv("HELM_DEBUG")
+	_ = os.Unsetenv("HELM_DEBUG")
 }
 
-// TestCreateTestChart creates a minimal test chart for integration testing
+// TestCreateTestChart creates a minimal test chart for integration testing.
 func TestCreateTestChart(t *testing.T) {
 	// Create a temporary directory for test chart
 	tempDir, err := os.MkdirTemp("", "helm-test-chart")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	chartDir := filepath.Join(tempDir, "test-chart")
-	err = os.MkdirAll(filepath.Join(chartDir, "templates"), 0755)
+	err = os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +261,7 @@ type: application
 version: 0.1.0
 appVersion: "1.0"
 `
-	err = os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0644)
+	err = os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +276,7 @@ service:
   type: ClusterIP
   port: 80
 `
-	err = os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(valuesYaml), 0644)
+	err = os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(valuesYaml), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +307,11 @@ spec:
           containerPort: 80
           protocol: TCP
 `
-	err = os.WriteFile(filepath.Join(chartDir, "templates", "deployment.yaml"), []byte(deploymentTemplate), 0644)
+	err = os.WriteFile(
+		filepath.Join(chartDir, "templates", "deployment.yaml"),
+		[]byte(deploymentTemplate),
+		0o644,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +334,11 @@ spec:
 {{- end }}
 {{- end }}
 `
-	err = os.WriteFile(filepath.Join(chartDir, "templates", "_helpers.tpl"), []byte(helpersTemplate), 0644)
+	err = os.WriteFile(
+		filepath.Join(chartDir, "templates", "_helpers.tpl"),
+		[]byte(helpersTemplate),
+		0o644,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +348,7 @@ spec:
 		Chart:       chartDir,
 		ReleaseName: "test-release",
 		Namespace:   "test-ns",
-		Values: map[string]interface{}{
+		Values: map[string]any{
 			"replicaCount": 2,
 		},
 	}
@@ -362,7 +372,7 @@ spec:
 	}
 }
 
-// contains checks if a string contains a substring (helper function)
+// contains checks if a string contains a substring (helper function).
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		len(s) > len(substr) && (s[:len(substr)] == substr ||
@@ -379,16 +389,16 @@ func containsAt(s, substr string) bool {
 	return false
 }
 
-// Benchmark tests
+// Benchmark tests.
 func BenchmarkMergeMaps(b *testing.B) {
-	mapA := map[string]interface{}{
+	mapA := map[string]any{
 		"key1": "value1",
 		"key2": "value2",
-		"key3": map[string]interface{}{
+		"key3": map[string]any{
 			"nested": "value",
 		},
 	}
-	mapB := map[string]interface{}{
+	mapB := map[string]any{
 		"key2": "newvalue2",
 		"key4": "value4",
 	}
@@ -402,11 +412,11 @@ func BenchmarkParseKubeVersion(b *testing.B) {
 	version := "v1.29.0"
 
 	for i := 0; i < b.N; i++ {
-		parseKubeVersion(version)
+		_, _ = parseKubeVersion(version)
 	}
 }
 
-// Test helper functions
+// Test helper functions.
 func TestIsTestHook(t *testing.T) {
 	tests := []struct {
 		name     string

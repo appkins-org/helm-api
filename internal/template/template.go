@@ -3,6 +3,7 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/action"
@@ -14,7 +15,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 )
 
-// TemplateRequest represents the JSON payload for the template endpoint
+// TemplateRequest represents the JSON payload for the template endpoint.
 type TemplateRequest struct {
 	// Chart specifies the chart to template (required)
 	Chart string `json:"chart"`
@@ -32,7 +33,7 @@ type TemplateRequest struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Values contains the values to use for templating
-	Values map[string]interface{} `json:"values,omitempty"`
+	Values map[string]any `json:"values,omitempty"`
 
 	// ValueFiles contains paths to values files
 	ValueFiles []string `json:"value_files,omitempty"`
@@ -68,7 +69,7 @@ type TemplateRequest struct {
 	Validate bool `json:"validate,omitempty"`
 }
 
-// ProcessTemplate processes a Helm template request and returns the rendered YAML
+// ProcessTemplate processes a Helm template request and returns the rendered YAML.
 func ProcessTemplate(req TemplateRequest) (string, error) {
 	if req.Chart == "" {
 		return "", fmt.Errorf("chart is required")
@@ -143,14 +144,14 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 
 	// Configure chart path options for repository support
 	if req.Repository != "" {
-		client.ChartPathOptions.RepoURL = req.Repository
+		client.RepoURL = req.Repository
 	}
 	if req.ChartVersion != "" {
-		client.ChartPathOptions.Version = req.ChartVersion
+		client.Version = req.ChartVersion
 	}
 
 	// Load chart
-	chartPath, err := client.ChartPathOptions.LocateChart(req.Chart, settings)
+	chartPath, err := client.LocateChart(req.Chart, settings)
 	if err != nil {
 		return "", fmt.Errorf("failed to locate chart: %w", err)
 	}
@@ -174,7 +175,7 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	return renderManifests(rel, req.ShowOnly, req.SkipTests)
 }
 
-// renderManifests renders the release manifests to YAML
+// renderManifests renders the release manifests to YAML.
 func renderManifests(rel *release.Release, showOnly []string, skipTests bool) (string, error) {
 	var manifests bytes.Buffer
 
@@ -205,24 +206,19 @@ func renderManifests(rel *release.Release, showOnly []string, skipTests bool) (s
 	return result, nil
 }
 
-// isTestHook checks if a hook is a test hook
+// isTestHook checks if a hook is a test hook.
 func isTestHook(hook *release.Hook) bool {
-	for _, event := range hook.Events {
-		if event == release.HookTest {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(hook.Events, release.HookTest)
 }
 
-// filterManifests filters manifests based on showOnly patterns
+// filterManifests filters manifests based on showOnly patterns.
 func filterManifests(manifests string, showOnly []string) string {
 	// This is a simplified implementation
 	// In a full implementation, you would parse manifests and match against file patterns
 	return manifests
 }
 
-// parseKubeVersion parses a Kubernetes version string
+// parseKubeVersion parses a Kubernetes version string.
 func parseKubeVersion(kubeVersion string) (*chartutil.KubeVersion, error) {
 	// Simple version parsing - in production you'd want more robust parsing
 	parts := strings.Split(strings.TrimPrefix(kubeVersion, "v"), ".")
@@ -237,9 +233,9 @@ func parseKubeVersion(kubeVersion string) (*chartutil.KubeVersion, error) {
 	}, nil
 }
 
-// mergeMaps merges two maps, with the second map taking precedence
-func mergeMaps(a, b map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+// mergeMaps merges two maps, with the second map taking precedence.
+func mergeMaps(a, b map[string]any) map[string]any {
+	result := make(map[string]any)
 
 	// Copy from a
 	for k, v := range a {
@@ -254,8 +250,8 @@ func mergeMaps(a, b map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-// debug is a debug function for Helm (simplified for client-only mode)
-func debug(format string, v ...interface{}) {
+// debug is a debug function for Helm (simplified for client-only mode).
+func debug(format string, v ...any) {
 	// Debug logging is disabled in client-only mode
 	// In production, you might want to use a proper logger
 }
