@@ -111,9 +111,9 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	} else {
 		// Default to latest stable Kubernetes version
 		client.KubeVersion = &chartutil.KubeVersion{
-			Version: "v1.29.0", // Latest stable as of 2024
+			Version: "v1.32.0",
 			Major:   "1",
-			Minor:   "29",
+			Minor:   "32",
 		}
 	}
 
