@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
-	sloglogr "github.com/go-logr/logr/slogr"
 )
 
 // SetupLogger creates and configures a structured logger based on the configuration
@@ -53,7 +52,7 @@ func (c *Config) SetupLogger() (*slog.Logger, error) {
 
 // SetupLogr creates a logr.Logger from the slog logger for backward compatibility
 func (c *Config) SetupLogr(slogLogger *slog.Logger) logr.Logger {
-	return sloglogr.NewLogr(slogLogger.Handler())
+	return logr.FromSlogHandler(slogLogger.Handler())
 }
 
 // LoggerWithContext adds context fields to the logger

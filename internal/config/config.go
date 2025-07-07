@@ -21,12 +21,30 @@ type Config struct {
 
 	// Observability configuration
 	Observability ObservabilityConfig `yaml:"observability" json:"observability"`
+
+	// Helm configuration
+	Helm HelmConfig `yaml:"helm" json:"helm"`
 }
 
 // ServerConfig holds server-related configuration
 type ServerConfig struct {
 	Port string `yaml:"port" json:"port"`
 	Host string `yaml:"host" json:"host"`
+}
+
+// HelmConfig holds Helm-related configuration
+type HelmConfig struct {
+	// PluginsDirectory sets the plugins directory path
+	PluginsDirectory string `yaml:"plugins_directory" json:"plugins_directory"`
+
+	// RepositoryCache sets the repository cache directory path
+	RepositoryCache string `yaml:"repository_cache" json:"repository_cache"`
+
+	// RepositoryConfig sets the repository configuration file path
+	RepositoryConfig string `yaml:"repository_config" json:"repository_config"`
+
+	// RegistryConfig sets the registry configuration file path
+	RegistryConfig string `yaml:"registry_config" json:"registry_config"`
 }
 
 // LoggingConfig holds logging-related configuration
@@ -105,6 +123,12 @@ func DefaultConfig() *Config {
 				WithSpanID:  false,
 				WithTraceID: false,
 			},
+		},
+		Helm: HelmConfig{
+			PluginsDirectory: "/tmp/.helm/plugins",
+			RepositoryCache:  "/tmp/.helm/repository",
+			RepositoryConfig: "/tmp/.helm/repositories.yaml",
+			RegistryConfig:   "/tmp/.helm/registry/config.json",
 		},
 	}
 }
@@ -214,6 +238,20 @@ func loadFromEnv(cfg *Config) {
 			cfg.Observability.Tracing.WithTraceID = b
 		}
 	}
+
+	// Helm configuration
+	if pluginsDir := os.Getenv("HELM_PLUGINS_DIRECTORY"); pluginsDir != "" {
+		cfg.Helm.PluginsDirectory = pluginsDir
+	}
+	if repoCache := os.Getenv("HELM_REPOSITORY_CACHE"); repoCache != "" {
+		cfg.Helm.RepositoryCache = repoCache
+	}
+	if repoConfig := os.Getenv("HELM_REPOSITORY_CONFIG"); repoConfig != "" {
+		cfg.Helm.RepositoryConfig = repoConfig
+	}
+	if registryConfig := os.Getenv("HELM_REGISTRY_CONFIG"); registryConfig != "" {
+		cfg.Helm.RegistryConfig = registryConfig
+	}
 }
 
 // Validate validates the configuration
@@ -281,4 +319,39 @@ func (c *Config) GetAddress() string {
 		return ":" + c.Server.Port
 	}
 	return c.Server.Host + ":" + c.Server.Port
+}
+
+// SetupHelmDirectories creates all required Helm directories and configuration files
+func (c *Config) SetupHelmDirectories() error {
+	// Create plugins directory
+	if err := os.MkdirAll(c.Helm.PluginsDirectory, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins directory %s: %w", c.Helm.PluginsDirectory, err)
+	}
+
+	// Create repository cache directory
+	if err := os.MkdirAll(c.Helm.RepositoryCache, 0755); err != nil {
+		return fmt.Errorf("failed to create repository cache directory %s: %w", c.Helm.RepositoryCache, err)
+	}
+
+	// Create directory for repository config file
+	repoConfigDir := filepath.Dir(c.Helm.RepositoryConfig)
+	if err := os.MkdirAll(repoConfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create repository config directory %s: %w", repoConfigDir, err)
+	}
+
+	// Create directory for registry config file
+	registryConfigDir := filepath.Dir(c.Helm.RegistryConfig)
+	if err := os.MkdirAll(registryConfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create registry config directory %s: %w", registryConfigDir, err)
+	}
+
+	// Create empty registry config file if it doesn't exist
+	if _, err := os.Stat(c.Helm.RegistryConfig); os.IsNotExist(err) {
+		emptyConfig := `{"auths":{}}`
+		if err := os.WriteFile(c.Helm.RegistryConfig, []byte(emptyConfig), 0644); err != nil {
+			return fmt.Errorf("failed to create registry config file %s: %w", c.Helm.RegistryConfig, err)
+		}
+	}
+
+	return nil
 }

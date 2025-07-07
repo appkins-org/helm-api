@@ -923,8 +923,6 @@ func TestSetupRegistryCache(t *testing.T) {
 				RegistryConfig: tt.registryConfig,
 			}
 
-			err := setupRegistryCache(settings)
-
 			if tt.expectError && err == nil {
 				t.Error("Expected error but got none")
 			} else if !tt.expectError && err != nil {

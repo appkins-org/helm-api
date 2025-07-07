@@ -17,6 +17,8 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+
+	"github.com/appkins-org/helm-api/internal/config"
 )
 
 // TemplateRequest represents the JSON payload for the template endpoint.
@@ -77,207 +79,40 @@ type TemplateRequest struct {
 }
 
 // ProcessTemplate processes a Helm template request and returns the rendered YAML.
+// Deprecated: Use ProcessTemplateWithConfig instead.
 func ProcessTemplate(req TemplateRequest) (string, error) {
-	logger := slog.Default()
-
-	// Validate required fields
-	if req.Chart == "" {
-		logger.Error("Chart parameter is required")
-		return "", fmt.Errorf("chart is required")
+	// For backward compatibility, use default configuration
+	// This function should eventually be removed in favor of ProcessTemplateWithConfig
+	cfg := &config.Config{
+		Helm: config.HelmConfig{
+			PluginsDirectory: "/tmp/.helm/plugins",
+			RepositoryCache:  "/tmp/.helm/repository",
+			RepositoryConfig: "/tmp/.helm/repositories.yaml",
+			RegistryConfig:   "/tmp/.helm/registry/config.json",
+		},
 	}
-
-	// Set defaults
-	if req.ReleaseName == "" {
-		req.ReleaseName = "release-name"
-	}
-	if req.Namespace == "" {
-		req.Namespace = "default"
-	}
-
-	logger.Info("Starting template processing",
-		"chart", req.Chart,
-		"repository", req.Repository,
-		"chart_version", req.ChartVersion,
-		"release_name", req.ReleaseName,
-		"namespace", req.Namespace,
-	)
-
-	// Create Helm configuration
-	settings := cli.New()
-	actionConfig := new(action.Configuration)
-
-	settings.PluginsDirectory = "/tmp/.plugins" // Disable plugins directory for client-only mode
-	settings.RepositoryCache = "/tmp/.cache"    // Disable repository cache for client-only mode
-
-	// Setup registry config file for OCI support
-	settings.RegistryConfig = "/tmp/.config/helm/registry/config.json"
-
-	// Create the directory for the config file if it doesn't exist
-	registryDir := "/tmp/.config/helm/registry"
-	if err := os.MkdirAll(registryDir, 0755); err != nil {
-		logger.Error("Failed to create registry config directory", "error", err, "path", registryDir)
-		return "", fmt.Errorf("failed to create registry config directory: %w", err)
-	}
-
-	// Create empty config file if it doesn't exist
-	if _, err := os.Stat(settings.RegistryConfig); os.IsNotExist(err) {
-		emptyConfig := `{"auths":{}}`
-		if err := os.WriteFile(settings.RegistryConfig, []byte(emptyConfig), 0644); err != nil {
-			logger.Error("Failed to create registry config file", "error", err, "path", settings.RegistryConfig)
-			return "", fmt.Errorf("failed to create registry config file: %w", err)
-		}
-	}
-
-	logger.Debug("Setting up Helm environment",
-		"plugins_dir", settings.PluginsDirectory,
-		"repo_cache", settings.RepositoryCache,
-		"registry_config", settings.RegistryConfig,
-	)
-
-	if err := os.MkdirAll(settings.PluginsDirectory, 0o775); err != nil {
-		logger.Error("Failed to create plugins directory", "error", err, "path", settings.PluginsDirectory)
-		return "", fmt.Errorf("failed to create plugins directory: %w", err)
-	}
-
-	if err := os.MkdirAll(settings.RepositoryCache, 0o775); err != nil {
-		logger.Error("Failed to create repository cache directory", "error", err, "path", settings.RepositoryCache)
-		return "", fmt.Errorf("failed to create repository cache directory: %w", err)
-	}
-
-	// Initialize action configuration for client-only mode (no cluster connection)
-	logger.Debug("Initializing Helm action configuration")
-	if err := actionConfig.Init(nil, req.Namespace, "memory", debug); err != nil {
-		logger.Error("Failed to initialize Helm action config", "error", err)
-		return "", fmt.Errorf("failed to initialize helm action config: %w", err)
-	}
-
-	// Setup registry client for OCI support
-	logger.Debug("Setting up registry client for OCI support")
-	registryClient, err := registry.NewClient(
-		registry.ClientOptDebug(settings.Debug),
-		registry.ClientOptWriter(os.Stderr),
-		registry.ClientOptCredentialsFile(settings.RegistryConfig),
-	)
-	if err != nil {
-		logger.Error("Failed to create registry client", "error", err)
-		return "", fmt.Errorf("failed to create registry client: %w", err)
-	}
-	actionConfig.RegistryClient = registryClient
-
-	// Handle repository setup if needed
-	if req.Repository != "" {
-		logger.Info("Setting up repository", "repository", req.Repository, "is_oci", registry.IsOCI(req.Repository))
-		if !registry.IsOCI(req.Repository) {
-			// Handle HTTP/HTTPS repository setup
-			if err := handleHTTPRepository(settings, req.Repository, req.Chart); err != nil {
-				logger.Error("Failed to handle HTTP repository", "error", err, "repository", req.Repository)
-				return "", fmt.Errorf("failed to handle HTTP repository: %w", err)
-			}
-		}
-	}
-
-	// Create install action (for templating)
-	logger.Debug("Creating Helm install action for templating")
-	client := action.NewInstall(actionConfig)
-	client.DryRun = true
-	client.ClientOnly = true // Always use client-only mode
-	client.ReleaseName = req.ReleaseName
-	client.Namespace = req.Namespace
-	client.Replace = true
-	client.IncludeCRDs = req.IncludeCRDs
-	client.IsUpgrade = req.IsUpgrade
-	client.CreateNamespace = req.CreateNamespace
-
-	// Set Kubernetes version if provided, otherwise use latest stable
-	if req.KubeVersion != "" {
-		logger.Debug("Parsing custom Kubernetes version", "kube_version", req.KubeVersion)
-		kubeVersion, err := parseKubeVersion(req.KubeVersion)
-		if err != nil {
-			logger.Error("Invalid Kubernetes version", "error", err, "kube_version", req.KubeVersion)
-			return "", fmt.Errorf("invalid kube version '%s': %w", req.KubeVersion, err)
-		}
-		client.KubeVersion = kubeVersion
-	} else {
-		// Default to latest stable Kubernetes version
-		client.KubeVersion = &chartutil.KubeVersion{
-			Version: "v1.32.0",
-			Major:   "1",
-			Minor:   "32",
-		}
-	}
-
-	// Set API versions if provided
-	if len(req.APIVersions) > 0 {
-		client.APIVersions = req.APIVersions
-	}
-
-	// Prepare values
-	valueOpts := &values.Options{
-		ValueFiles:   req.ValueFiles,
-		Values:       req.Values,
-		StringValues: req.StringValues,
-		FileValues:   req.FileValues,
-		JSONValues:   req.JSONValues,
-	}
-
-	// Merge values
-	vals, err := valueOpts.MergeValues(getter.All(settings))
-	if err != nil {
-		return "", fmt.Errorf("failed to merge values: %w", err)
-	}
-
-	// Configure chart path options for repository support
-	chartName := req.Chart
-	if req.Repository != "" {
-		if registry.IsOCI(req.Repository) {
-			// For OCI repositories, construct the full OCI path
-			if !strings.Contains(chartName, req.Repository) {
-				// If chart doesn't already contain the full OCI path, construct it
-				chartName = strings.TrimSuffix(req.Repository, "/") + "/" + strings.TrimPrefix(chartName, "/")
-			}
-		} else {
-			// For HTTP/HTTPS repositories, use the repository name format that Helm expects
-			repoName := generateRepoName(req.Repository)
-			chartName = repoName + "/" + req.Chart
-		}
-	}
-
-	if req.ChartVersion != "" {
-		client.Version = req.ChartVersion
-		client.ChartPathOptions.Version = req.ChartVersion
-	}
-
-	// Load chart
-	chartPath, err := client.LocateChart(chartName, settings)
-	if err != nil {
-		return "", fmt.Errorf("failed to locate chart: %w", err)
-	}
-
-	chartRequested, err := loader.Load(chartPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to load chart: %w", err)
-	}
-
-	// Validate chart
-	if err := chartRequested.Validate(); err != nil {
-		return "", fmt.Errorf("chart validation failed: %w", err)
-	}
-
-	// Run template
-	rel, err := client.Run(chartRequested, vals)
-	if err != nil {
-		return "", fmt.Errorf("failed to run template: %w", err)
-	}
-
-	return renderManifests(rel, req.ShowOnly, req.SkipTests)
+	return ProcessTemplateWithConfig(req, cfg)
 }
 
 // renderManifests renders the release manifests to YAML.
-func renderManifests(rel *release.Release, showOnly []string, skipTests bool) (string, error) {
+func renderManifests(rel *release.Release, showOnly []string, skipTests bool, createNamespace bool, namespace string) (string, error) {
 	var manifests bytes.Buffer
+
+	// Add namespace manifest if CreateNamespace is true and namespace is not default
+	if createNamespace && namespace != "" && namespace != "default" {
+		manifests.WriteString("---\n")
+		manifests.WriteString("# Source: namespace.yaml\n")
+		manifests.WriteString(fmt.Sprintf(`apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+`, namespace))
+		manifests.WriteString("\n")
+	}
 
 	// Write main manifest
 	if rel.Manifest != "" {
+		manifests.WriteString("---\n")
 		manifests.WriteString(strings.TrimSpace(rel.Manifest))
 		manifests.WriteString("\n")
 	}
@@ -458,4 +293,175 @@ func generateRepoName(repoURL string) string {
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, ".", "-")
 	return name
+}
+
+// ProcessTemplateWithConfig processes a Helm template request using the provided configuration
+func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string, error) {
+	logger := slog.Default()
+
+	// Validate required fields
+	if req.Chart == "" {
+		logger.Error("Chart parameter is required")
+		return "", fmt.Errorf("chart is required")
+	}
+
+	// Set defaults
+	if req.ReleaseName == "" {
+		req.ReleaseName = "release-name"
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+
+	logger.Info("Starting template processing",
+		"chart", req.Chart,
+		"repository", req.Repository,
+		"chart_version", req.ChartVersion,
+		"release_name", req.ReleaseName,
+		"namespace", req.Namespace,
+	)
+
+	// Create Helm configuration using provided config
+	settings := cli.New()
+	actionConfig := new(action.Configuration)
+
+	// Use config values instead of hardcoded paths
+	settings.PluginsDirectory = cfg.Helm.PluginsDirectory
+	settings.RepositoryCache = cfg.Helm.RepositoryCache
+	settings.RepositoryConfig = cfg.Helm.RepositoryConfig
+	settings.RegistryConfig = cfg.Helm.RegistryConfig
+
+	logger.Debug("Setting up Helm environment",
+		"plugins_dir", settings.PluginsDirectory,
+		"repo_cache", settings.RepositoryCache,
+		"repo_config", settings.RepositoryConfig,
+		"registry_config", settings.RegistryConfig,
+	)
+
+	// Initialize action configuration for client-only mode (no cluster connection)
+	logger.Debug("Initializing Helm action configuration")
+	if err := actionConfig.Init(nil, req.Namespace, "memory", debug); err != nil {
+		logger.Error("Failed to initialize Helm action config", "error", err)
+		return "", fmt.Errorf("failed to initialize helm action config: %w", err)
+	}
+
+	// Setup registry client for OCI support
+	logger.Debug("Setting up registry client for OCI support")
+	registryClient, err := registry.NewClient(
+		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptWriter(os.Stderr),
+		registry.ClientOptCredentialsFile(settings.RegistryConfig),
+	)
+	if err != nil {
+		logger.Error("Failed to create registry client", "error", err)
+		return "", fmt.Errorf("failed to create registry client: %w", err)
+	}
+	actionConfig.RegistryClient = registryClient
+
+	// Handle repository setup if needed
+	if req.Repository != "" {
+		logger.Info("Setting up repository", "repository", req.Repository, "is_oci", registry.IsOCI(req.Repository))
+		if !registry.IsOCI(req.Repository) {
+			// Handle HTTP/HTTPS repository setup
+			if err := handleHTTPRepository(settings, req.Repository, req.Chart); err != nil {
+				logger.Error("Failed to handle HTTP repository", "error", err, "repository", req.Repository)
+				return "", fmt.Errorf("failed to handle HTTP repository: %w", err)
+			}
+		}
+	}
+
+	// Create install action (for templating)
+	logger.Debug("Creating Helm install action for templating")
+	client := action.NewInstall(actionConfig)
+	client.DryRun = true
+	client.ClientOnly = true // Always use client-only mode
+	client.ReleaseName = req.ReleaseName
+	client.Namespace = req.Namespace
+	client.Replace = true
+	client.IncludeCRDs = req.IncludeCRDs
+	client.IsUpgrade = req.IsUpgrade
+	client.CreateNamespace = req.CreateNamespace
+
+	// Set Kubernetes version if provided, otherwise use latest stable
+	if req.KubeVersion != "" {
+		logger.Debug("Parsing custom Kubernetes version", "kube_version", req.KubeVersion)
+		kubeVersion, err := parseKubeVersion(req.KubeVersion)
+		if err != nil {
+			logger.Error("Invalid Kubernetes version", "error", err, "kube_version", req.KubeVersion)
+			return "", fmt.Errorf("invalid kube version '%s': %w", req.KubeVersion, err)
+		}
+		client.KubeVersion = kubeVersion
+	} else {
+		// Default to latest stable Kubernetes version
+		client.KubeVersion = &chartutil.KubeVersion{
+			Version: "v1.32.0",
+			Major:   "1",
+			Minor:   "32",
+		}
+	}
+
+	// Set API versions if provided
+	if len(req.APIVersions) > 0 {
+		client.APIVersions = req.APIVersions
+	}
+
+	// Prepare values
+	valueOpts := &values.Options{
+		ValueFiles:   req.ValueFiles,
+		Values:       req.Values,
+		StringValues: req.StringValues,
+		FileValues:   req.FileValues,
+		JSONValues:   req.JSONValues,
+	}
+
+	// Merge values
+	vals, err := valueOpts.MergeValues(getter.All(settings))
+	if err != nil {
+		return "", fmt.Errorf("failed to merge values: %w", err)
+	}
+
+	// Configure chart path options for repository support
+	chartName := req.Chart
+	if req.Repository != "" {
+		if registry.IsOCI(req.Repository) {
+			// For OCI repositories, construct the full OCI path
+			if !strings.Contains(chartName, req.Repository) {
+				// If chart doesn't already contain the full OCI path, construct it
+				chartName = strings.TrimSuffix(req.Repository, "/") + "/" + strings.TrimPrefix(chartName, "/")
+			}
+		} else {
+			// For HTTP/HTTPS repositories, use the repository name format that Helm expects
+			repoName := generateRepoName(req.Repository)
+			chartName = repoName + "/" + req.Chart
+		}
+	}
+
+	if req.ChartVersion != "" {
+		client.Version = req.ChartVersion
+		client.ChartPathOptions.Version = req.ChartVersion
+	}
+
+	// Load chart
+	chartPath, err := client.LocateChart(chartName, settings)
+	if err != nil {
+		return "", fmt.Errorf("failed to locate chart: %w", err)
+	}
+
+	chartRequested, err := loader.Load(chartPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to load chart: %w", err)
+	}
+
+	// Validate chart
+	if err := chartRequested.Validate(); err != nil {
+		return "", fmt.Errorf("chart validation failed: %w", err)
+	}
+
+	// Run template
+	rel, err := client.Run(chartRequested, vals)
+	if err != nil {
+		return "", fmt.Errorf("failed to run template: %w", err)
+	}
+
+	return renderManifests(rel, req.ShowOnly, req.SkipTests, req.CreateNamespace, req.Namespace)
 }
