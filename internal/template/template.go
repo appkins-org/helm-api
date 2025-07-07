@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/appkins-org/helm-api/internal/config"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -17,8 +18,6 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
-
-	"github.com/appkins-org/helm-api/internal/config"
 )
 
 // TemplateRequest represents the JSON payload for the template endpoint.
@@ -95,7 +94,13 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 }
 
 // renderManifests renders the release manifests to YAML.
-func renderManifests(rel *release.Release, showOnly []string, skipTests bool, createNamespace bool, namespace string) (string, error) {
+func renderManifests(
+	rel *release.Release,
+	showOnly []string,
+	skipTests bool,
+	createNamespace bool,
+	namespace string,
+) (string, error) {
 	var manifests bytes.Buffer
 
 	// Add namespace manifest if CreateNamespace is true and namespace is not default
@@ -187,25 +192,7 @@ func debug(format string, v ...any) {
 	slog.Debug(fmt.Sprintf(format, v...))
 }
 
-// handleOCIRepository handles OCI repository operations for caching and downloading
-func handleOCIRepository(registryClient *registry.Client, repository, chart string) error {
-	logger := slog.Default()
-
-	if !registry.IsOCI(repository) {
-		return nil // Not an OCI repository, nothing to do
-	}
-
-	// For OCI repositories, we don't need explicit login for public repositories
-	// The registry client will handle caching automatically when the chart is pulled
-	// This is a simplified implementation without credential handling
-
-	// Log that we're handling an OCI repository
-	logger.Debug("Handling OCI repository", "repository", repository, "chart", chart)
-
-	return nil
-}
-
-// handleHTTPRepository handles HTTP/HTTPS repository setup for caching and chart downloading
+// handleHTTPRepository handles HTTP/HTTPS repository setup for caching and chart downloading.
 func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) error {
 	logger := slog.Default()
 
@@ -216,8 +203,14 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 	logger.Debug("Handling HTTP repository", "repository", repository, "chart", chart)
 
 	// Ensure the repository cache directory exists
-	if err := os.MkdirAll(settings.RepositoryCache, 0755); err != nil {
-		logger.Error("Failed to create repository cache directory", "error", err, "path", settings.RepositoryCache)
+	if err := os.MkdirAll(settings.RepositoryCache, 0o755); err != nil {
+		logger.Error(
+			"Failed to create repository cache directory",
+			"error",
+			err,
+			"path",
+			settings.RepositoryCache,
+		)
 		return fmt.Errorf("failed to create repository cache directory: %w", err)
 	}
 
@@ -237,7 +230,13 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 		if _, err := os.Stat(settings.RepositoryConfig); err == nil {
 			repoFile, err = repo.LoadFile(settings.RepositoryConfig)
 			if err != nil {
-				logger.Warn("Failed to load existing repository file, creating new one", "error", err, "path", settings.RepositoryConfig)
+				logger.Warn(
+					"Failed to load existing repository file, creating new one",
+					"error",
+					err,
+					"path",
+					settings.RepositoryConfig,
+				)
 				repoFile = repo.NewFile()
 			}
 		}
@@ -245,13 +244,25 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 
 	// Check if repository already exists
 	if !repoFile.Has(repoName) {
-		logger.Info("Adding repository to configuration", "repo_name", repoName, "repository", repository)
+		logger.Info(
+			"Adding repository to configuration",
+			"repo_name",
+			repoName,
+			"repository",
+			repository,
+		)
 		// Add the repository to the file
 		repoFile.Add(repoEntry)
 
 		// Write the repositories file
-		if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
-			logger.Error("Failed to write repository config", "error", err, "path", settings.RepositoryConfig)
+		if err := repoFile.WriteFile(settings.RepositoryConfig, 0o644); err != nil {
+			logger.Error(
+				"Failed to write repository config",
+				"error",
+				err,
+				"path",
+				settings.RepositoryConfig,
+			)
 			return fmt.Errorf("failed to write repository config: %w", err)
 		}
 	} else {
@@ -284,7 +295,7 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 	return nil
 }
 
-// generateRepoName generates a repository name from a URL
+// generateRepoName generates a repository name from a URL.
 func generateRepoName(repoURL string) string {
 	// Simple implementation: use a hash or simplified name
 	// Remove protocol and special characters
@@ -295,7 +306,7 @@ func generateRepoName(repoURL string) string {
 	return name
 }
 
-// ProcessTemplateWithConfig processes a Helm template request using the provided configuration
+// ProcessTemplateWithConfig processes a Helm template request using the provided configuration.
 func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string, error) {
 	logger := slog.Default()
 
@@ -360,11 +371,23 @@ func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string,
 
 	// Handle repository setup if needed
 	if req.Repository != "" {
-		logger.Info("Setting up repository", "repository", req.Repository, "is_oci", registry.IsOCI(req.Repository))
+		logger.Info(
+			"Setting up repository",
+			"repository",
+			req.Repository,
+			"is_oci",
+			registry.IsOCI(req.Repository),
+		)
 		if !registry.IsOCI(req.Repository) {
 			// Handle HTTP/HTTPS repository setup
 			if err := handleHTTPRepository(settings, req.Repository, req.Chart); err != nil {
-				logger.Error("Failed to handle HTTP repository", "error", err, "repository", req.Repository)
+				logger.Error(
+					"Failed to handle HTTP repository",
+					"error",
+					err,
+					"repository",
+					req.Repository,
+				)
 				return "", fmt.Errorf("failed to handle HTTP repository: %w", err)
 			}
 		}
@@ -387,7 +410,13 @@ func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string,
 		logger.Debug("Parsing custom Kubernetes version", "kube_version", req.KubeVersion)
 		kubeVersion, err := parseKubeVersion(req.KubeVersion)
 		if err != nil {
-			logger.Error("Invalid Kubernetes version", "error", err, "kube_version", req.KubeVersion)
+			logger.Error(
+				"Invalid Kubernetes version",
+				"error",
+				err,
+				"kube_version",
+				req.KubeVersion,
+			)
 			return "", fmt.Errorf("invalid kube version '%s': %w", req.KubeVersion, err)
 		}
 		client.KubeVersion = kubeVersion
@@ -427,7 +456,13 @@ func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string,
 			// For OCI repositories, construct the full OCI path
 			if !strings.Contains(chartName, req.Repository) {
 				// If chart doesn't already contain the full OCI path, construct it
-				chartName = strings.TrimSuffix(req.Repository, "/") + "/" + strings.TrimPrefix(chartName, "/")
+				chartName = strings.TrimSuffix(
+					req.Repository,
+					"/",
+				) + "/" + strings.TrimPrefix(
+					chartName,
+					"/",
+				)
 			}
 		} else {
 			// For HTTP/HTTPS repositories, use the repository name format that Helm expects
@@ -438,7 +473,7 @@ func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string,
 
 	if req.ChartVersion != "" {
 		client.Version = req.ChartVersion
-		client.ChartPathOptions.Version = req.ChartVersion
+		client.Version = req.ChartVersion
 	}
 
 	// Load chart

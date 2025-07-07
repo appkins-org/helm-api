@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the application configuration
+// Config represents the application configuration.
 type Config struct {
 	// Server configuration
 	Server ServerConfig `yaml:"server" json:"server"`
@@ -26,13 +26,13 @@ type Config struct {
 	Helm HelmConfig `yaml:"helm" json:"helm"`
 }
 
-// ServerConfig holds server-related configuration
+// ServerConfig holds server-related configuration.
 type ServerConfig struct {
 	Port string `yaml:"port" json:"port"`
 	Host string `yaml:"host" json:"host"`
 }
 
-// HelmConfig holds Helm-related configuration
+// HelmConfig holds Helm-related configuration.
 type HelmConfig struct {
 	// PluginsDirectory sets the plugins directory path
 	PluginsDirectory string `yaml:"plugins_directory" json:"plugins_directory"`
@@ -47,7 +47,7 @@ type HelmConfig struct {
 	RegistryConfig string `yaml:"registry_config" json:"registry_config"`
 }
 
-// LoggingConfig holds logging-related configuration
+// LoggingConfig holds logging-related configuration.
 type LoggingConfig struct {
 	// Level sets the log level (debug, info, warn, error)
 	Level string `yaml:"level" json:"level"`
@@ -62,7 +62,7 @@ type LoggingConfig struct {
 	HTTP HTTPLoggingConfig `yaml:"http" json:"http"`
 }
 
-// HTTPLoggingConfig holds HTTP-specific logging configuration
+// HTTPLoggingConfig holds HTTP-specific logging configuration.
 type HTTPLoggingConfig struct {
 	// Enabled controls whether HTTP logging is enabled
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -80,13 +80,13 @@ type HTTPLoggingConfig struct {
 	ResponseHeaders bool `yaml:"response_headers" json:"response_headers"`
 }
 
-// ObservabilityConfig holds observability-related configuration
+// ObservabilityConfig holds observability-related configuration.
 type ObservabilityConfig struct {
 	// Tracing configuration
 	Tracing TracingConfig `yaml:"tracing" json:"tracing"`
 }
 
-// TracingConfig holds tracing-related configuration
+// TracingConfig holds tracing-related configuration.
 type TracingConfig struct {
 	// Enabled controls whether tracing is enabled
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -98,7 +98,7 @@ type TracingConfig struct {
 	WithTraceID bool `yaml:"with_trace_id" json:"with_trace_id"`
 }
 
-// DefaultConfig returns a configuration with sensible defaults
+// DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -133,7 +133,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadConfig loads configuration from environment variables and optional YAML file
+// LoadConfig loads configuration from environment variables and optional YAML file.
 func LoadConfig() (*Config, error) {
 	cfg := DefaultConfig()
 
@@ -155,7 +155,7 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// loadFromYAML loads configuration from a YAML file
+// loadFromYAML loads configuration from a YAML file.
 func loadFromYAML(cfg *Config, filename string) error {
 	// Check if file exists
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
@@ -174,7 +174,7 @@ func loadFromYAML(cfg *Config, filename string) error {
 	return nil
 }
 
-// loadFromEnv loads configuration from environment variables
+// loadFromEnv loads configuration from environment variables.
 func loadFromEnv(cfg *Config) {
 	// Server configuration
 	if port := os.Getenv("PORT"); port != "" {
@@ -254,7 +254,7 @@ func loadFromEnv(cfg *Config) {
 	}
 }
 
-// Validate validates the configuration
+// Validate validates the configuration.
 func (c *Config) Validate() error {
 	// Validate log level
 	level := strings.ToLower(c.Logging.Level)
@@ -262,7 +262,10 @@ func (c *Config) Validate() error {
 	case "debug", "info", "warn", "error":
 		c.Logging.Level = level
 	default:
-		return fmt.Errorf("invalid log level: %s (must be debug, info, warn, or error)", c.Logging.Level)
+		return fmt.Errorf(
+			"invalid log level: %s (must be debug, info, warn, or error)",
+			c.Logging.Level,
+		)
 	}
 
 	// Validate log format
@@ -297,7 +300,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// GetLogLevel returns the slog.Level for the configured log level
+// GetLogLevel returns the slog.Level for the configured log level.
 func (c *Config) GetLogLevel() slog.Level {
 	switch strings.ToLower(c.Logging.Level) {
 	case "debug":
@@ -313,7 +316,7 @@ func (c *Config) GetLogLevel() slog.Level {
 	}
 }
 
-// GetAddress returns the full server address
+// GetAddress returns the full server address.
 func (c *Config) GetAddress() string {
 	if c.Server.Host == "" {
 		return ":" + c.Server.Port
@@ -321,35 +324,47 @@ func (c *Config) GetAddress() string {
 	return c.Server.Host + ":" + c.Server.Port
 }
 
-// SetupHelmDirectories creates all required Helm directories and configuration files
+// SetupHelmDirectories creates all required Helm directories and configuration files.
 func (c *Config) SetupHelmDirectories() error {
 	// Create plugins directory
-	if err := os.MkdirAll(c.Helm.PluginsDirectory, 0755); err != nil {
+	if err := os.MkdirAll(c.Helm.PluginsDirectory, 0o755); err != nil {
 		return fmt.Errorf("failed to create plugins directory %s: %w", c.Helm.PluginsDirectory, err)
 	}
 
 	// Create repository cache directory
-	if err := os.MkdirAll(c.Helm.RepositoryCache, 0755); err != nil {
-		return fmt.Errorf("failed to create repository cache directory %s: %w", c.Helm.RepositoryCache, err)
+	if err := os.MkdirAll(c.Helm.RepositoryCache, 0o755); err != nil {
+		return fmt.Errorf(
+			"failed to create repository cache directory %s: %w",
+			c.Helm.RepositoryCache,
+			err,
+		)
 	}
 
 	// Create directory for repository config file
 	repoConfigDir := filepath.Dir(c.Helm.RepositoryConfig)
-	if err := os.MkdirAll(repoConfigDir, 0755); err != nil {
+	if err := os.MkdirAll(repoConfigDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create repository config directory %s: %w", repoConfigDir, err)
 	}
 
 	// Create directory for registry config file
 	registryConfigDir := filepath.Dir(c.Helm.RegistryConfig)
-	if err := os.MkdirAll(registryConfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create registry config directory %s: %w", registryConfigDir, err)
+	if err := os.MkdirAll(registryConfigDir, 0o755); err != nil {
+		return fmt.Errorf(
+			"failed to create registry config directory %s: %w",
+			registryConfigDir,
+			err,
+		)
 	}
 
 	// Create empty registry config file if it doesn't exist
 	if _, err := os.Stat(c.Helm.RegistryConfig); os.IsNotExist(err) {
 		emptyConfig := `{"auths":{}}`
-		if err := os.WriteFile(c.Helm.RegistryConfig, []byte(emptyConfig), 0644); err != nil {
-			return fmt.Errorf("failed to create registry config file %s: %w", c.Helm.RegistryConfig, err)
+		if err := os.WriteFile(c.Helm.RegistryConfig, []byte(emptyConfig), 0o644); err != nil {
+			return fmt.Errorf(
+				"failed to create registry config file %s: %w",
+				c.Helm.RegistryConfig,
+				err,
+			)
 		}
 	}
 

@@ -16,8 +16,19 @@ import (
 func TestMockHTTPServer(t *testing.T) {
 	// Create a new HTTP server with our routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", hhandler.New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t)))).ServeHTTP)
-	mux.HandleFunc("/template", thandler.New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig()).ServeHTTP)
+	mux.HandleFunc(
+		"/health",
+		hhandler.New(
+			logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		).ServeHTTP,
+	)
+	mux.HandleFunc(
+		"/template",
+		thandler.New(
+			logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+			config.DefaultConfig(),
+		).ServeHTTP,
+	)
 
 	server := httptest.NewServer(mux)
 	defer server.Close()

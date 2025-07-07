@@ -53,24 +53,24 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	defer func() {
 		for key, value := range originalEnvs {
 			if value == "" {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			} else {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value)
 			}
 		}
 	}()
 
 	// Set test environment variables
-	os.Setenv("PORT", "9090")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("LOG_FORMAT", "json")
-	os.Setenv("TRACING_ENABLED", "true")
-	os.Setenv("TRACING_WITH_SPAN_ID", "true")
-	os.Setenv("TRACING_WITH_TRACE_ID", "true")
-	os.Setenv("LOG_HTTP_ENABLED", "false")
-	os.Setenv("LOG_HTTP_REQUEST_BODY", "true")
-	os.Setenv("LOG_HTTP_RESPONSE_BODY", "true")
-	os.Setenv("LOG_HTTP_REQUEST_HEADERS", "true")
+	_ = os.Setenv("PORT", "9090")
+	_ = os.Setenv("LOG_LEVEL", "debug")
+	_ = os.Setenv("LOG_FORMAT", "json")
+	_ = os.Setenv("TRACING_ENABLED", "true")
+	_ = os.Setenv("TRACING_WITH_SPAN_ID", "true")
+	_ = os.Setenv("TRACING_WITH_TRACE_ID", "true")
+	_ = os.Setenv("LOG_HTTP_ENABLED", "false")
+	_ = os.Setenv("LOG_HTTP_REQUEST_BODY", "true")
+	_ = os.Setenv("LOG_HTTP_RESPONSE_BODY", "true")
+	_ = os.Setenv("LOG_HTTP_REQUEST_HEADERS", "true")
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -222,7 +222,7 @@ func TestGetAddress(t *testing.T) {
 	}
 }
 
-// Helper function to check if a string contains a substring
+// Helper function to check if a string contains a substring.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		len(s) > len(substr) && (s[:len(substr)] == substr ||

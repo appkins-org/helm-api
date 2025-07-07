@@ -876,145 +876,25 @@ func TestOCIRepositoryHandling(t *testing.T) {
 			chartName := tt.chart
 			if tt.repository != "" && registry.IsOCI(tt.repository) {
 				if !strings.Contains(chartName, tt.repository) {
-					chartName = strings.TrimSuffix(tt.repository, "/") + "/" + strings.TrimPrefix(chartName, "/")
+					chartName = strings.TrimSuffix(
+						tt.repository,
+						"/",
+					) + "/" + strings.TrimPrefix(
+						chartName,
+						"/",
+					)
 				}
 			}
 
 			if chartName != tt.expectedURL {
-				t.Errorf("Chart name construction mismatch: expected %q, got %q", tt.expectedURL, chartName)
+				t.Errorf(
+					"Chart name construction mismatch: expected %q, got %q",
+					tt.expectedURL,
+					chartName,
+				)
 			}
 
 			t.Logf("Test '%s' passed: %s", tt.name, tt.description)
-		})
-	}
-}
-
-func TestSetupRegistryCache(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "helm-registry-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	tests := []struct {
-		name           string
-		registryConfig string
-		expectError    bool
-		description    string
-	}{
-		{
-			name:           "empty registry config",
-			registryConfig: "",
-			expectError:    false,
-			description:    "Should create default registry cache directory",
-		},
-		{
-			name:           "custom registry config",
-			registryConfig: filepath.Join(tempDir, "custom-registry"),
-			expectError:    false,
-			description:    "Should use custom registry cache directory",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			settings := &cli.EnvSettings{
-				RegistryConfig: tt.registryConfig,
-			}
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error but got none")
-			} else if !tt.expectError && err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-
-			if !tt.expectError {
-				// Verify directory was created and config file exists
-				if settings.RegistryConfig == "" {
-					t.Error("RegistryConfig should not be empty after setup")
-				}
-
-				// Check that the config file was created
-				if _, err := os.Stat(settings.RegistryConfig); os.IsNotExist(err) {
-					t.Errorf("Registry config file was not created: %s", settings.RegistryConfig)
-				}
-
-				// Verify it's a file, not a directory
-				if info, err := os.Stat(settings.RegistryConfig); err == nil && info.IsDir() {
-					t.Errorf("Registry config should be a file, not a directory: %s", settings.RegistryConfig)
-				}
-			}
-
-			t.Logf("Test '%s' completed: %s", tt.name, tt.description)
-		})
-	}
-}
-
-func TestHandleOCIRepository(t *testing.T) {
-	// Create a temporary directory for registry config
-	tempDir, err := os.MkdirTemp("", "registry-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create a mock registry config file
-	configFile := filepath.Join(tempDir, "config.json")
-	emptyConfig := `{"auths":{}}`
-	if err := os.WriteFile(configFile, []byte(emptyConfig), 0644); err != nil {
-		t.Fatalf("Failed to create config file: %v", err)
-	}
-
-	// Create a mock registry client for testing
-	registryClient, err := registry.NewClient(
-		registry.ClientOptCredentialsFile(configFile),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create registry client: %v", err)
-	}
-
-	tests := []struct {
-		name        string
-		repository  string
-		chart       string
-		expectError bool
-		description string
-	}{
-		{
-			name:        "OCI repository",
-			repository:  "oci://registry-1.docker.io/bitnamicharts",
-			chart:       "nginx",
-			expectError: false,
-			description: "Should handle OCI repository without error",
-		},
-		{
-			name:        "HTTP repository",
-			repository:  "https://charts.bitnami.com/bitnami",
-			chart:       "nginx",
-			expectError: false,
-			description: "Should handle non-OCI repository gracefully",
-		},
-		{
-			name:        "empty repository",
-			repository:  "",
-			chart:       "nginx",
-			expectError: false,
-			description: "Should handle empty repository gracefully",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := handleOCIRepository(registryClient, tt.repository, tt.chart)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error but got none")
-			} else if !tt.expectError && err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-
-			t.Logf("Test '%s' completed: %s", tt.name, tt.description)
 		})
 	}
 }
@@ -1025,7 +905,9 @@ func TestHandleHTTPRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	tests := []struct {
 		name        string
@@ -1087,7 +969,10 @@ func TestHandleHTTPRepository(t *testing.T) {
 			// Verify repository config was created
 			if tt.repository != "" && !registry.IsOCI(tt.repository) {
 				if _, err := os.Stat(settings.RepositoryConfig); os.IsNotExist(err) {
-					t.Errorf("Repository config file was not created: %s", settings.RepositoryConfig)
+					t.Errorf(
+						"Repository config file was not created: %s",
+						settings.RepositoryConfig,
+					)
 				}
 			}
 
@@ -1102,7 +987,7 @@ func TestHTTPRepositoryIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name        string
@@ -1154,14 +1039,14 @@ func TestHTTPRepositoryIntegration(t *testing.T) {
 }
 
 // TestHTTPRepositoryHandling tests that HTTP repositories are properly set up
-// and that charts can be located and templated from them
+// and that charts can be located and templated from them.
 func TestHTTPRepositoryHandling(t *testing.T) {
 	// Create a temporary directory for test settings
 	tempDir, err := os.MkdirTemp("", "helm-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Set up test environment settings
 	settings := cli.New()
@@ -1220,7 +1105,7 @@ func TestHTTPRepositoryHandling(t *testing.T) {
 	}
 }
 
-// TestGenerateRepoName tests the repository name generation function
+// TestGenerateRepoName tests the repository name generation function.
 func TestGenerateRepoName(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -7,7 +7,7 @@ import (
 	sloghttp "github.com/samber/slog-http"
 )
 
-// SetupHTTPMiddleware configures HTTP middleware with logging and observability
+// SetupHTTPMiddleware configures HTTP middleware with logging and observability.
 func (c *Config) SetupHTTPMiddleware(logger *slog.Logger, handler http.Handler) http.Handler {
 	if !c.Logging.HTTP.Enabled {
 		return handler
@@ -39,7 +39,7 @@ func (c *Config) SetupHTTPMiddleware(logger *slog.Logger, handler http.Handler) 
 	return handler
 }
 
-// NewHTTPHandler creates a new HTTP handler with logging middleware
+// NewHTTPHandler creates a new HTTP handler with logging middleware.
 func (c *Config) NewHTTPHandler(logger *slog.Logger, mux *http.ServeMux) http.Handler {
 	return c.SetupHTTPMiddleware(logger, mux)
 }

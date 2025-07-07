@@ -141,7 +141,10 @@ func TestTemplateEndpointSuccess(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	// Note: This test will fail if nginx chart is not available locally
 	// In a real test environment, you'd want to use a mock chart or test chart
@@ -172,7 +175,10 @@ func TestTemplateEndpointInvalidRequest(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -207,7 +213,10 @@ func TestTemplateEndpointMissingChart(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -241,7 +250,10 @@ func TestTemplateEndpointMethodNotAllowed(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, req)
 
@@ -261,7 +273,10 @@ func TestTemplateEndpointWithSetValues(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -286,7 +301,10 @@ func TestTemplateEndpointWithRepository(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -312,7 +330,10 @@ func TestTemplateEndpointWithOCI(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -400,7 +421,10 @@ spec:
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -527,7 +551,10 @@ spec:
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -578,7 +605,10 @@ func TestTemplateEndpointErrorReturnsJSON(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+	handler := New(
+		logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+		config.DefaultConfig(),
+	)
 
 	handler.ServeHTTP(rr, httpReq)
 
@@ -677,7 +707,10 @@ func TestTemplateEndpointCreateNamespace(t *testing.T) {
 			}
 
 			rr := httptest.NewRecorder()
-			handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+			handler := New(
+				logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+				config.DefaultConfig(),
+			)
 
 			handler.ServeHTTP(rr, httpReq)
 
@@ -771,7 +804,10 @@ func TestTemplateEndpointCreateNamespaceValidation(t *testing.T) {
 			}
 
 			rr := httptest.NewRecorder()
-			handler := New(logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))), config.DefaultConfig())
+			handler := New(
+				logr.FromContextAsSlogLogger(logr.NewContext(t.Context(), testr.New(t))),
+				config.DefaultConfig(),
+			)
 
 			handler.ServeHTTP(rr, httpReq)
 
@@ -818,7 +854,12 @@ func BenchmarkTemplateHandler(b *testing.B) {
 		httpReq, _ := http.NewRequest("GET", url, nil)
 
 		rr := httptest.NewRecorder()
-		handler := New(logr.FromContextAsSlogLogger(logr.NewContext(b.Context(), testr.NewWithInterface(b, testr.Options{}))), config.DefaultConfig())
+		handler := New(
+			logr.FromContextAsSlogLogger(
+				logr.NewContext(b.Context(), testr.NewWithInterface(b, testr.Options{})),
+			),
+			config.DefaultConfig(),
+		)
 		handler.ServeHTTP(rr, httpReq)
 	}
 }

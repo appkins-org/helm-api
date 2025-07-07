@@ -12,14 +12,14 @@ import (
 	"github.com/gorilla/schema"
 )
 
-// handler handles Helm template requests
+// handler handles Helm template requests.
 type handler struct {
 	logger  *slog.Logger
 	config  *config.Config
 	decoder *schema.Decoder
 }
 
-// New creates a new template handler
+// New creates a new template handler.
 func New(logger *slog.Logger, cfg *config.Config) api.Handler {
 	return &handler{
 		logger:  logger,
@@ -28,7 +28,7 @@ func New(logger *slog.Logger, cfg *config.Config) api.Handler {
 	}
 }
 
-// ServeHTTP processes template requests
+// ServeHTTP processes template requests.
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqLogger := h.logger.With("path", r.URL.Path, "method", r.Method)
 	reqLogger.Debug("Handling template request")
@@ -89,7 +89,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(result))
 }
 
-// parseTemplateRequest parses HTTP query parameters into a TemplateRequest
+// parseTemplateRequest parses HTTP query parameters into a TemplateRequest.
 func (h *handler) parseTemplateRequest(r *http.Request) (template.TemplateRequest, error) {
 	query := r.URL.Query()
 

@@ -38,7 +38,11 @@ func BenchmarkHealthHandler(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		handler := New(logr.FromContextAsSlogLogger(logr.NewContext(b.Context(), testr.NewWithInterface(b, testr.Options{}))))
+		handler := New(
+			logr.FromContextAsSlogLogger(
+				logr.NewContext(b.Context(), testr.NewWithInterface(b, testr.Options{})),
+			),
+		)
 		handler.ServeHTTP(rr, req)
 	}
 }

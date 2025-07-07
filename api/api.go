@@ -11,7 +11,7 @@ import (
 
 type HandlerMapping map[string]Handler
 
-// Api represents the HTTP API server with all its dependencies
+// Api represents the HTTP API server with all its dependencies.
 type Api struct {
 	config     *config.Config
 	logger     *slog.Logger
@@ -19,7 +19,7 @@ type Api struct {
 	handlers   HandlerMapping
 }
 
-// New creates a new Api instance with the given configuration
+// New creates a new Api instance with the given configuration.
 func New(cfg *config.Config, logger *slog.Logger) *Api {
 	return &Api{
 		config:   cfg,
@@ -36,7 +36,7 @@ func (a *Api) AddHandler(path string, handler Handler) {
 	}
 }
 
-// Start initializes all dependencies and starts the HTTP server
+// Start initializes all dependencies and starts the HTTP server.
 func (a *Api) Start() error {
 	// Setup Helm directories first - panic if this fails as it's essential
 	if err := a.config.SetupHelmDirectories(); err != nil {
@@ -83,7 +83,7 @@ func (a *Api) Start() error {
 	return nil
 }
 
-// Shutdown gracefully shuts down the HTTP server
+// Shutdown gracefully shuts down the HTTP server.
 func (a *Api) Shutdown() error {
 	if a.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

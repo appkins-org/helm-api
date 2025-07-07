@@ -8,19 +8,19 @@ import (
 	"github.com/appkins-org/helm-api/api"
 )
 
-// handler handles health check requests
+// handler handles health check requests.
 type handler struct {
 	logger *slog.Logger
 }
 
-// New creates a new health handler
+// New creates a new health handler.
 func New(logger *slog.Logger) api.Handler {
 	return &handler{
 		logger: logger,
 	}
 }
 
-// ServeHTTP processes health check requests
+// ServeHTTP processes health check requests.
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Handling health check", "path", r.URL.Path, "method", r.Method)
 

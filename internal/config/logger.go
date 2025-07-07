@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/logr"
 )
 
-// SetupLogger creates and configures a structured logger based on the configuration
+// SetupLogger creates and configures a structured logger based on the configuration.
 func (c *Config) SetupLogger() (*slog.Logger, error) {
 	// Determine output writer
 	var writer io.Writer
@@ -19,7 +19,7 @@ func (c *Config) SetupLogger() (*slog.Logger, error) {
 		writer = os.Stderr
 	default:
 		// Assume it's a file path
-		file, err := os.OpenFile(c.Logging.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err := os.OpenFile(c.Logging.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			return nil, err
 		}
@@ -50,12 +50,12 @@ func (c *Config) SetupLogger() (*slog.Logger, error) {
 	return logger, nil
 }
 
-// SetupLogr creates a logr.Logger from the slog logger for backward compatibility
+// SetupLogr creates a logr.Logger from the slog logger for backward compatibility.
 func (c *Config) SetupLogr(slogLogger *slog.Logger) logr.Logger {
 	return logr.FromSlogHandler(slogLogger.Handler())
 }
 
-// LoggerWithContext adds context fields to the logger
+// LoggerWithContext adds context fields to the logger.
 func LoggerWithContext(logger *slog.Logger, keyvals ...any) *slog.Logger {
 	return logger.With(keyvals...)
 }
