@@ -4,7 +4,7 @@
 		{
 			"label": "build",
 			"type": "shell",
-			"command": "go build -o helm-api .",
+			"command": "go build -o helm-api ./cmd/helm",
 			"group": "build",
 			"problemMatcher": [
 				"$go"

@@ -16,7 +16,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o helm-api .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o helm-api ./cmd/helm
 
 # Final stage
 FROM alpine:latest
