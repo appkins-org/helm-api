@@ -9,6 +9,9 @@ A simple HTTP API server that provides Helm templating functionality without req
 - **Multiple chart sources**: Support for local charts, HTTP/HTTPS repositories, and OCI registries
 - **Configurable**: Support for all major Helm template options including values, files, and Kubernetes versions
 - **Container-ready**: Built with GoReleaser and ko for easy container deployment
+- **Structured Logging**: Configurable structured logging with slog and slog-http middleware
+- **Observability**: OpenTelemetry integration with trace and span ID logging
+- **Flexible Configuration**: Environment variables and YAML file configuration support
 
 ## API Endpoint
 
@@ -137,10 +140,55 @@ goreleaser build --snapshot --clean
 
 ## Configuration
 
-The server can be configured using environment variables:
+The application supports configuration through environment variables and YAML files, with environment variables taking precedence.
 
-- `PORT`: Server port (default: 8080)
-- `HELM_DEBUG`: Enable Helm debug logging (default: false)
+### Configuration File
+
+Create a `config.yaml` file (see `config.example.yaml` for reference) and set the `CONFIG_FILE` environment variable:
+
+```bash
+export CONFIG_FILE=config.yaml
+./helm-api
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CONFIG_FILE` | Path to YAML configuration file | "" |
+| `PORT` | Server port | "8080" |
+| `HOST` | Server host | "" |
+| `LOG_LEVEL` | Log level (debug, info, warn, error) | "info" |
+| `LOG_FORMAT` | Log format (text, json) | "text" |
+| `LOG_OUTPUT` | Log output (stdout, stderr, file path) | "stdout" |
+| `LOG_HTTP_ENABLED` | Enable HTTP request/response logging | true |
+| `LOG_HTTP_REQUEST_BODY` | Log request bodies | false |
+| `LOG_HTTP_RESPONSE_BODY` | Log response bodies | false |
+| `LOG_HTTP_REQUEST_HEADERS` | Log request headers | false |
+| `LOG_HTTP_RESPONSE_HEADERS` | Log response headers | false |
+| `TRACING_ENABLED` | Enable tracing features | false |
+| `TRACING_WITH_SPAN_ID` | Include span IDs in logs | false |
+| `TRACING_WITH_TRACE_ID` | Include trace IDs in logs | false |
+
+### Logging
+
+The application uses structured logging with [slog](https://pkg.go.dev/log/slog) and HTTP middleware from [slog-http](https://github.com/samber/slog-http).
+
+#### Examples
+
+```bash
+# Debug logging with JSON format
+LOG_LEVEL=debug LOG_FORMAT=json ./helm-api
+
+# Enable detailed HTTP logging
+LOG_HTTP_REQUEST_BODY=true LOG_HTTP_RESPONSE_BODY=true ./helm-api
+
+# Enable OpenTelemetry integration
+TRACING_ENABLED=true TRACING_WITH_SPAN_ID=true TRACING_WITH_TRACE_ID=true ./helm-api
+
+# Log to file
+LOG_OUTPUT=/var/log/helm-api.log ./helm-api
+```
 
 ### Chart Authentication
 

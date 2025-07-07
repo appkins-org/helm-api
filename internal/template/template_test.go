@@ -1154,3 +1154,104 @@ func TestHTTPRepositoryIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestHTTPRepositoryHandling tests that HTTP repositories are properly set up
+// and that charts can be located and templated from them
+func TestHTTPRepositoryHandling(t *testing.T) {
+	// Create a temporary directory for test settings
+	tempDir, err := os.MkdirTemp("", "helm-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Set up test environment settings
+	settings := cli.New()
+	settings.RepositoryConfig = filepath.Join(tempDir, "repositories.yaml")
+	settings.RepositoryCache = filepath.Join(tempDir, "repository")
+
+	tests := []struct {
+		name       string
+		repository string
+		chart      string
+		shouldWork bool
+	}{
+		{
+			name:       "valid jetstack repository",
+			repository: "https://charts.jetstack.io",
+			chart:      "cert-manager",
+			shouldWork: true,
+		},
+		{
+			name:       "invalid repository URL",
+			repository: "https://invalid.repository.url",
+			chart:      "nginx",
+			shouldWork: false,
+		},
+		{
+			name:       "empty repository",
+			repository: "",
+			chart:      "nginx",
+			shouldWork: true, // Should work (local chart)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := handleHTTPRepository(settings, tt.repository, tt.chart)
+
+			if tt.shouldWork && err != nil {
+				t.Errorf("Expected handleHTTPRepository to succeed, but got error: %v", err)
+			}
+
+			if !tt.shouldWork && err == nil && tt.repository != "" {
+				t.Error("Expected handleHTTPRepository to fail, but it succeeded")
+			}
+
+			// For valid repositories, check that repository config was created
+			if tt.shouldWork && tt.repository != "" && err == nil {
+				if _, err := os.Stat(settings.RepositoryConfig); os.IsNotExist(err) {
+					t.Error("Expected repository config file to be created")
+				}
+
+				if _, err := os.Stat(settings.RepositoryCache); os.IsNotExist(err) {
+					t.Error("Expected repository cache directory to be created")
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateRepoName tests the repository name generation function
+func TestGenerateRepoName(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoURL  string
+		expected string
+	}{
+		{
+			name:     "https URL",
+			repoURL:  "https://charts.jetstack.io",
+			expected: "charts-jetstack-io",
+		},
+		{
+			name:     "http URL",
+			repoURL:  "http://charts.example.com",
+			expected: "charts-example-com",
+		},
+		{
+			name:     "URL with path",
+			repoURL:  "https://charts.bitnami.com/bitnami",
+			expected: "charts-bitnami-com-bitnami",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := generateRepoName(tt.repoURL)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}

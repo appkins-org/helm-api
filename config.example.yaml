@@ -1,0 +1,46 @@
+# Helm API Configuration Example
+# This file demonstrates all available configuration options
+
+server:
+  # Server listening port (can be overridden with PORT env var)
+  port: "8080"
+  # Server host (can be overridden with HOST env var)
+  host: ""
+
+logging:
+  # Log level: debug, info, warn, error (can be overridden with LOG_LEVEL env var)
+  level: "info"
+
+  # Log format: text, json (can be overridden with LOG_FORMAT env var)
+  format: "text"
+
+  # Log output: stdout, stderr, or file path (can be overridden with LOG_OUTPUT env var)
+  output: "stdout"
+
+  # HTTP request/response logging configuration
+  http:
+    # Enable HTTP logging (can be overridden with LOG_HTTP_ENABLED env var)
+    enabled: true
+
+    # Log request bodies (can be overridden with LOG_HTTP_REQUEST_BODY env var)
+    request_body: false
+
+    # Log response bodies (can be overridden with LOG_HTTP_RESPONSE_BODY env var)
+    response_body: false
+
+    # Log request headers (can be overridden with LOG_HTTP_REQUEST_HEADERS env var)
+    request_headers: false
+
+    # Log response headers (can be overridden with LOG_HTTP_RESPONSE_HEADERS env var)
+    response_headers: false
+
+observability:
+  tracing:
+    # Enable tracing/observability features (can be overridden with TRACING_ENABLED env var)
+    enabled: false
+
+    # Include span IDs in logs (can be overridden with TRACING_WITH_SPAN_ID env var)
+    with_span_id: false
+
+    # Include trace IDs in logs (can be overridden with TRACING_WITH_TRACE_ID env var)
+    with_trace_id: false

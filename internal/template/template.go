@@ -3,6 +3,7 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -77,7 +78,11 @@ type TemplateRequest struct {
 
 // ProcessTemplate processes a Helm template request and returns the rendered YAML.
 func ProcessTemplate(req TemplateRequest) (string, error) {
+	logger := slog.Default()
+
+	// Validate required fields
 	if req.Chart == "" {
+		logger.Error("Chart parameter is required")
 		return "", fmt.Errorf("chart is required")
 	}
 
@@ -89,6 +94,14 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 		req.Namespace = "default"
 	}
 
+	logger.Info("Starting template processing",
+		"chart", req.Chart,
+		"repository", req.Repository,
+		"chart_version", req.ChartVersion,
+		"release_name", req.ReleaseName,
+		"namespace", req.Namespace,
+	)
+
 	// Create Helm configuration
 	settings := cli.New()
 	actionConfig := new(action.Configuration)
@@ -96,42 +109,75 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	settings.PluginsDirectory = "/tmp/.plugins" // Disable plugins directory for client-only mode
 	settings.RepositoryCache = "/tmp/.cache"    // Disable repository cache for client-only mode
 
+	// Setup registry config file for OCI support
+	settings.RegistryConfig = "/tmp/.config/helm/registry/config.json"
+
+	// Create the directory for the config file if it doesn't exist
+	registryDir := "/tmp/.config/helm/registry"
+	if err := os.MkdirAll(registryDir, 0755); err != nil {
+		logger.Error("Failed to create registry config directory", "error", err, "path", registryDir)
+		return "", fmt.Errorf("failed to create registry config directory: %w", err)
+	}
+
+	// Create empty config file if it doesn't exist
+	if _, err := os.Stat(settings.RegistryConfig); os.IsNotExist(err) {
+		emptyConfig := `{"auths":{}}`
+		if err := os.WriteFile(settings.RegistryConfig, []byte(emptyConfig), 0644); err != nil {
+			logger.Error("Failed to create registry config file", "error", err, "path", settings.RegistryConfig)
+			return "", fmt.Errorf("failed to create registry config file: %w", err)
+		}
+	}
+
+	logger.Debug("Setting up Helm environment",
+		"plugins_dir", settings.PluginsDirectory,
+		"repo_cache", settings.RepositoryCache,
+		"registry_config", settings.RegistryConfig,
+	)
+
 	if err := os.MkdirAll(settings.PluginsDirectory, 0o775); err != nil {
+		logger.Error("Failed to create plugins directory", "error", err, "path", settings.PluginsDirectory)
 		return "", fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
 	if err := os.MkdirAll(settings.RepositoryCache, 0o775); err != nil {
+		logger.Error("Failed to create repository cache directory", "error", err, "path", settings.RepositoryCache)
 		return "", fmt.Errorf("failed to create repository cache directory: %w", err)
 	}
 
 	// Initialize action configuration for client-only mode (no cluster connection)
+	logger.Debug("Initializing Helm action configuration")
 	if err := actionConfig.Init(nil, req.Namespace, "memory", debug); err != nil {
+		logger.Error("Failed to initialize Helm action config", "error", err)
 		return "", fmt.Errorf("failed to initialize helm action config: %w", err)
 	}
 
 	// Setup registry client for OCI support
-	registryClient, err := registry.NewClient()
+	logger.Debug("Setting up registry client for OCI support")
+	registryClient, err := registry.NewClient(
+		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptWriter(os.Stderr),
+		registry.ClientOptCredentialsFile(settings.RegistryConfig),
+	)
 	if err != nil {
+		logger.Error("Failed to create registry client", "error", err)
 		return "", fmt.Errorf("failed to create registry client: %w", err)
 	}
 	actionConfig.RegistryClient = registryClient
 
 	// Handle repository setup if needed
 	if req.Repository != "" {
-		if registry.IsOCI(req.Repository) {
-			// Handle OCI repository login/caching if needed
-			if err := handleOCIRepository(registryClient, req.Repository, req.Chart); err != nil {
-				return "", fmt.Errorf("failed to handle OCI repository: %w", err)
-			}
-		} else {
+		logger.Info("Setting up repository", "repository", req.Repository, "is_oci", registry.IsOCI(req.Repository))
+		if !registry.IsOCI(req.Repository) {
 			// Handle HTTP/HTTPS repository setup
 			if err := handleHTTPRepository(settings, req.Repository, req.Chart); err != nil {
+				logger.Error("Failed to handle HTTP repository", "error", err, "repository", req.Repository)
 				return "", fmt.Errorf("failed to handle HTTP repository: %w", err)
 			}
 		}
 	}
 
 	// Create install action (for templating)
+	logger.Debug("Creating Helm install action for templating")
 	client := action.NewInstall(actionConfig)
 	client.DryRun = true
 	client.ClientOnly = true // Always use client-only mode
@@ -144,8 +190,10 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 
 	// Set Kubernetes version if provided, otherwise use latest stable
 	if req.KubeVersion != "" {
+		logger.Debug("Parsing custom Kubernetes version", "kube_version", req.KubeVersion)
 		kubeVersion, err := parseKubeVersion(req.KubeVersion)
 		if err != nil {
+			logger.Error("Invalid Kubernetes version", "error", err, "kube_version", req.KubeVersion)
 			return "", fmt.Errorf("invalid kube version '%s': %w", req.KubeVersion, err)
 		}
 		client.KubeVersion = kubeVersion
@@ -299,14 +347,15 @@ func mergeMaps(a, b map[string]any) map[string]any {
 	return result
 }
 
-// debug is a debug function for Helm (simplified for client-only mode).
+// debug is a debug function for Helm with structured logging.
 func debug(format string, v ...any) {
-	// Debug logging is disabled in client-only mode
-	// In production, you might want to use a proper logger
+	slog.Debug(fmt.Sprintf(format, v...))
 }
 
 // handleOCIRepository handles OCI repository operations for caching and downloading
 func handleOCIRepository(registryClient *registry.Client, repository, chart string) error {
+	logger := slog.Default()
+
 	if !registry.IsOCI(repository) {
 		return nil // Not an OCI repository, nothing to do
 	}
@@ -316,26 +365,30 @@ func handleOCIRepository(registryClient *registry.Client, repository, chart stri
 	// This is a simplified implementation without credential handling
 
 	// Log that we're handling an OCI repository
-	debug("Handling OCI repository: %s for chart: %s", repository, chart)
+	logger.Debug("Handling OCI repository", "repository", repository, "chart", chart)
 
 	return nil
 }
 
 // handleHTTPRepository handles HTTP/HTTPS repository setup for caching and chart downloading
 func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) error {
+	logger := slog.Default()
+
 	if repository == "" || registry.IsOCI(repository) {
 		return nil // Not an HTTP repository or empty, nothing to do
 	}
 
-	debug("Handling HTTP repository: %s for chart: %s", repository, chart)
+	logger.Debug("Handling HTTP repository", "repository", repository, "chart", chart)
 
 	// Ensure the repository cache directory exists
 	if err := os.MkdirAll(settings.RepositoryCache, 0755); err != nil {
+		logger.Error("Failed to create repository cache directory", "error", err, "path", settings.RepositoryCache)
 		return fmt.Errorf("failed to create repository cache directory: %w", err)
 	}
 
 	// Generate a repository name based on the URL for caching
 	repoName := generateRepoName(repository)
+	logger.Debug("Generated repository name", "repo_name", repoName, "repository", repository)
 
 	// Create repository entry
 	repoEntry := &repo.Entry{
@@ -349,7 +402,7 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 		if _, err := os.Stat(settings.RepositoryConfig); err == nil {
 			repoFile, err = repo.LoadFile(settings.RepositoryConfig)
 			if err != nil {
-				debug("Warning: failed to load existing repository file, creating new one: %v", err)
+				logger.Warn("Failed to load existing repository file, creating new one", "error", err, "path", settings.RepositoryConfig)
 				repoFile = repo.NewFile()
 			}
 		}
@@ -357,18 +410,23 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 
 	// Check if repository already exists
 	if !repoFile.Has(repoName) {
+		logger.Info("Adding repository to configuration", "repo_name", repoName, "repository", repository)
 		// Add the repository to the file
 		repoFile.Add(repoEntry)
 
 		// Write the repositories file
 		if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
+			logger.Error("Failed to write repository config", "error", err, "path", settings.RepositoryConfig)
 			return fmt.Errorf("failed to write repository config: %w", err)
 		}
+	} else {
+		logger.Debug("Repository already exists in configuration", "repo_name", repoName)
 	}
 
 	// Create a ChartRepository for downloading the index
 	chartRepo, err := repo.NewChartRepository(repoEntry, getter.All(settings))
 	if err != nil {
+		logger.Error("Failed to create chart repository", "error", err, "repository", repository)
 		return fmt.Errorf("failed to create chart repository: %w", err)
 	}
 
@@ -376,13 +434,18 @@ func handleHTTPRepository(settings *cli.EnvSettings, repository, chart string) e
 	chartRepo.CachePath = settings.RepositoryCache
 
 	// Download and cache the repository index
+	logger.Info("Downloading repository index", "repository", repository)
 	indexFile, err := chartRepo.DownloadIndexFile()
 	if err != nil {
+		logger.Error("Failed to download repository index", "error", err, "repository", repository)
 		return fmt.Errorf("failed to download repository index from %s: %w", repository, err)
 	}
 
-	debug("Repository index downloaded successfully: %s", indexFile)
-	debug("Repository setup completed for: %s", repository)
+	logger.Info("Repository setup completed successfully",
+		"repository", repository,
+		"repo_name", repoName,
+		"index_file", indexFile,
+	)
 	return nil
 }
 
