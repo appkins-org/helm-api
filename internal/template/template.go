@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -97,9 +98,52 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	return ProcessTemplateWithConfig(req, cfg)
 }
 
+func extractKind(manifest string) []string {
+	re := regexp.MustCompile(`(?m)^kind:\s*(\S+)`)
+	matches := re.FindAllStringSubmatch(manifest, -1)
+
+	var kinds []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			kinds = append(kinds, match[1])
+		}
+	}
+	return kinds
+}
+
+func extractName(manifest string) []string {
+	re := regexp.MustCompile(`(?m)^[ ]{2}name:\s*(\S+)`)
+	matches := re.FindAllStringSubmatch(manifest, -1)
+
+	var names []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			names = append(names, match[1])
+		}
+	}
+	return names
+}
+
+func extractMapKey(
+	sourceFile string,
+	manifest string,
+) (string, error) {
+	kind := extractKind(manifest)
+	if len(kind) == 0 {
+		return "", fmt.Errorf("no kind found in manifest for source file: %s", sourceFile)
+	}
+	name := extractName(manifest)
+	if len(name) == 0 {
+		return "", fmt.Errorf("no name found in manifest for source file: %s", sourceFile)
+	}
+	sourceFileNoExt := strings.TrimSuffix(sourceFile, ".yaml")
+	return fmt.Sprintf("%s/%s-%s.yaml", sourceFileNoExt, kind[0], name[0]), nil
+}
+
 func manifestToMap(
 	manifest string,
 ) (map[string]string, error) {
+
 	manifestMap := make(map[string]string)
 	manifestParts := strings.SplitSeq(manifest, "---\n")
 	for manifestPart := range manifestParts {
@@ -122,8 +166,18 @@ func manifestToMap(
 			return nil, fmt.Errorf("manifest part does not contain source comment: %s", manifestPart)
 		}
 
+		currentManifest := lines[1]
+		if strings.HasPrefix(currentManifest, "#") {
+			currentManifest = strings.SplitN(currentManifest, "\n", 2)[1]
+		}
+
+		sourceKey, err := extractMapKey(sourceFile, currentManifest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract map key: %w", err)
+		}
+
 		if sourceFile != "" {
-			manifestMap[sourceFile] = lines[1]
+			manifestMap[sourceKey] = currentManifest
 		}
 	}
 	return manifestMap, nil
