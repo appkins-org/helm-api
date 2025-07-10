@@ -104,8 +104,10 @@ func renderManifests(
 	createNamespace bool,
 	namespace string,
 	namespaceLabels []string,
+	req TemplateRequest,
 ) (string, error) {
 	var manifests bytes.Buffer
+	manifestMap := make(map[string]string)
 
 	// Add namespace manifest if CreateNamespace is true and namespace is not default
 	if createNamespace && namespace != "" && namespace != "default" {
@@ -131,48 +133,77 @@ func renderManifests(
 			"metadata":   namespaceMetadata,
 		}
 
-		enc := yaml.NewEncoder(&manifests)
+		var nsBuffer bytes.Buffer
+		enc := yaml.NewEncoder(&nsBuffer)
 		enc.SetIndent(2)
 		if err := enc.Encode(&namespaceManifest); err != nil {
 			return "", fmt.Errorf("failed to encode namespace manifest: %w", err)
 		}
+
+		nsManifestStr := nsBuffer.String()
+		manifestMap["namespace.yaml"] = nsManifestStr
+		manifests.WriteString(nsManifestStr)
 	}
 
-	// Write main manifest
+	// Process main manifest
 	if rel.Manifest != "" {
-		if !strings.HasPrefix(rel.Manifest, "---\n") {
-			// If the manifest already starts with a separator, just append it
-			manifests.WriteString("---\n")
+		manifestParts := strings.Split(rel.Manifest, "---\n")
+		for _, manifestPart := range manifestParts {
+			manifestPart = strings.TrimSpace(manifestPart)
+			if manifestPart == "" {
+				continue
+			}
+
+			// Extract source file name and add to map
+			lines := strings.SplitN(manifestPart, "\n", 5)
+			var sourceFile string
+			for _, line := range lines {
+				if after, ok := strings.CutPrefix(strings.TrimSpace(line), "# Source: "); ok {
+					sourceFile = strings.TrimSpace(after)
+					break
+				}
+			}
+
+			// Add Helm labels and annotations to the manifest
+			enrichedManifest, err := addHelmMetadata(manifestPart, req.ReleaseName, req.Namespace)
+			if err != nil {
+				return "", fmt.Errorf("failed to add Helm metadata: %w", err)
+			}
+
+			if sourceFile != "" {
+				manifestMap[sourceFile] = enrichedManifest
+			}
+
+			if !strings.HasPrefix(enrichedManifest, "---\n") {
+				manifests.WriteString("---\n")
+			}
+			manifests.WriteString(enrichedManifest)
 		}
-		manifests.WriteString(strings.TrimSpace(rel.Manifest))
 	}
 
-	// Write main manifest
-	if rel.Manifest != "" {
-		if !strings.HasPrefix(rel.Manifest, "---\n") {
-			// If the manifest already starts with a separator, just append it
-			manifests.WriteString("---\n")
-		}
-		manifests.WriteString(strings.TrimSpace(rel.Manifest))
-		manifests.WriteString("\n")
-	}
-
-	// Write hooks if not disabled
+	// Process hooks if not disabled
 	for _, hook := range rel.Hooks {
 		if skipTests && isTestHook(hook) {
 			continue
 		}
+
+		// Add Helm labels and annotations to hook manifests
+		enrichedHook, err := addHelmMetadata(hook.Manifest, req.ReleaseName, req.Namespace)
+		if err != nil {
+			return "", fmt.Errorf("failed to add Helm metadata to hook: %w", err)
+		}
+
+		manifestMap[hook.Path] = enrichedHook
 		manifests.WriteString("---\n")
 		manifests.WriteString(fmt.Sprintf("# Source: %s\n", hook.Path))
-		manifests.WriteString(hook.Manifest)
-		manifests.WriteString("\n")
+		manifests.WriteString(enrichedHook)
 	}
 
 	result := manifests.String()
 
 	// Filter by showOnly if specified
 	if len(showOnly) > 0 {
-		result = filterManifests(result, showOnly)
+		result = filterManifests(manifestMap, showOnly)
 	}
 
 	return result, nil
@@ -193,36 +224,62 @@ ORIGINAL IMPLEMENTATION ISSUES:
 - Checked entire manifest content against showOnly patterns (incorrect logic)
 - Processed every line of every manifest even when not needed
 
-IMPROVED IMPLEMENTATION:
-- Time Complexity: O(M + S) - much better scaling
-- Space Complexity: O(S) for the showOnly map + O(M) for filtered results
-- Uses map for O(1) lookup instead of O(S) slices.Contains
-- Only checks first 5 lines per manifest (Source comments are typically at the top)
-- Stops checking lines once Source comment is found and matched
-- Removed incorrect manifest content matching logic
-- Cleaner separation logic and proper joining
+IMPROVED IMPLEMENTATION V2:
+- Time Complexity: O(S) - optimal scaling using manifest map lookup
+- Space Complexity: O(M) for the manifest map + O(S) for the showOnly set
+- Uses pre-built manifest map with source file keys for O(1) lookup
+- No string parsing needed during filtering - source files extracted once during rendering
+- Direct map lookup instead of iterating through all manifests
+- Cleaner separation of concerns between rendering and filtering
 
 PERFORMANCE GAINS:
-- Benchmark: ~16µs for 100 manifests (excellent performance)
-- Scales linearly with number of manifests rather than exponentially
-- Memory efficient with map-based lookups
-- Early termination optimizations
+- Map-based filtering: O(S) instead of O(M × L × S)
+- No duplicate parsing of Source comments
+- Memory efficient with direct map access
+- Scales only with showOnly size, not manifest count or content
 
 STRATEGY VALIDATION:
 - Helm templates always include "# Source: filename" comments at the top of manifests
 - showOnly patterns match these source filenames exactly
 - Case-sensitive matching (as per Helm behavior)
 - Proper YAML document separation with "---\n"
+- Enhanced with Helm metadata injection for better resource management
 */
 
-// filterManifests filters manifests based on showOnly patterns.
-// Improved implementation with O(M + S) complexity where M is number of manifests and S is showOnly size.
-func filterManifests(manifests string, showOnly []string) string {
+// filterManifests filters manifests based on showOnly patterns using a manifest map.
+// Improved implementation with O(S) complexity where S is showOnly size.
+func filterManifests(manifestMap map[string]string, showOnly []string) string {
 	if len(showOnly) == 0 {
-		return manifests
+		// Return all manifests joined together with proper separators
+		// Sort keys for deterministic output in tests
+		keys := make([]string, 0, len(manifestMap))
+		for k := range manifestMap {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+
+		var result strings.Builder
+		first := true
+		for _, key := range keys {
+			manifest := strings.TrimSpace(manifestMap[key])
+			if manifest == "" {
+				continue
+			}
+			if !first {
+				result.WriteString("\n---\n")
+			} else {
+				// First manifest should start with ---
+				if !strings.HasPrefix(manifest, "---") {
+					result.WriteString("---\n")
+				}
+				first = false
+			}
+			result.WriteString(manifest)
+		}
+		return result.String()
 	}
 
-	// Convert showOnly to a map for O(1) lookups
+	// Convert showOnly to a set for O(1) lookups
 	showOnlySet := make(map[string]bool, len(showOnly))
 	for _, pattern := range showOnly {
 		showOnlySet[pattern] = true
@@ -230,25 +287,11 @@ func filterManifests(manifests string, showOnly []string) string {
 
 	var filtered []string
 
-	// Split manifests by the separator
-	manifestParts := strings.Split(manifests, "---\n")
-
-	for _, manifest := range manifestParts {
-		manifest = strings.TrimSpace(manifest)
-		if manifest == "" {
-			continue
-		}
-
-		// Look for the Source comment in the first few lines (typically line 1 or 2)
-		lines := strings.SplitN(manifest, "\n", 5) // Only check first 5 lines for efficiency
-		for _, line := range lines {
-			if after, ok := strings.CutPrefix(strings.TrimSpace(line), "# Source: "); ok {
-				sourceFile := strings.TrimSpace(after)
-				if showOnlySet[sourceFile] {
-					filtered = append(filtered, manifest)
-					break // Found match, no need to check more lines
-				}
-			}
+	// Look up manifests by their source file names in the order specified in showOnly
+	// to maintain deterministic output
+	for _, pattern := range showOnly {
+		if manifest, exists := manifestMap[pattern]; exists {
+			filtered = append(filtered, strings.TrimSpace(manifest))
 		}
 	}
 
@@ -408,6 +451,62 @@ func generateRepoName(repoURL string) string {
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, ".", "-")
 	return name
+}
+
+// addHelmMetadata adds Helm-specific labels and annotations to a manifest
+func addHelmMetadata(manifestContent, releaseName, namespace string) (string, error) {
+	if strings.TrimSpace(manifestContent) == "" {
+		return manifestContent, nil
+	}
+
+	// Parse YAML manifest
+	var manifest map[string]any
+	if err := yaml.Unmarshal([]byte(manifestContent), &manifest); err != nil {
+		// If we can't parse as YAML, return as-is (might be a comment or non-standard format)
+		return manifestContent, nil
+	}
+
+	// Ensure metadata exists
+	metadata, ok := manifest["metadata"].(map[string]any)
+	if !ok {
+		metadata = make(map[string]any)
+		manifest["metadata"] = metadata
+	}
+
+	// Add/update labels
+	labels, ok := metadata["labels"].(map[string]any)
+	if !ok {
+		labels = make(map[string]any)
+	}
+
+	// Add managed-by label if not present
+	if _, exists := labels["app.kubernetes.io/managed-by"]; !exists {
+		labels["app.kubernetes.io/managed-by"] = "Helm"
+	}
+
+	metadata["labels"] = labels
+
+	// Add/update annotations
+	annotations, ok := metadata["annotations"].(map[string]any)
+	if !ok {
+		annotations = make(map[string]any)
+	}
+
+	// Add Helm annotations
+	annotations["meta.helm.sh/release-name"] = releaseName
+	annotations["meta.helm.sh/release-namespace"] = namespace
+
+	metadata["annotations"] = annotations
+
+	// Marshal back to YAML
+	var buffer bytes.Buffer
+	encoder := yaml.NewEncoder(&buffer)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(manifest); err != nil {
+		return "", fmt.Errorf("failed to encode manifest with Helm metadata: %w", err)
+	}
+
+	return buffer.String(), nil
 }
 
 // ProcessTemplateWithConfig processes a Helm template request using the provided configuration.
@@ -602,5 +701,5 @@ func ProcessTemplateWithConfig(req TemplateRequest, cfg *config.Config) (string,
 		return "", fmt.Errorf("failed to run template: %w", err)
 	}
 
-	return renderManifests(rel, req.ShowOnly, req.SkipTests, req.CreateNamespace, req.Namespace, req.NamespaceLabels)
+	return renderManifests(rel, req.ShowOnly, req.SkipTests, req.CreateNamespace, req.Namespace, req.NamespaceLabels, req)
 }
