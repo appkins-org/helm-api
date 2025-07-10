@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -96,6 +97,38 @@ func ProcessTemplate(req TemplateRequest) (string, error) {
 	return ProcessTemplateWithConfig(req, cfg)
 }
 
+func manifestToMap(
+	manifest string,
+) (map[string]string, error) {
+	manifestMap := make(map[string]string)
+	manifestParts := strings.SplitSeq(manifest, "---\n")
+	for manifestPart := range manifestParts {
+		if !strings.Contains(manifestPart, "apiVersion:") {
+			// Skip non-manifest parts (e.g., comments or empty lines)
+			continue
+		}
+
+		manifestPart = strings.TrimSpace(manifestPart)
+		if manifestPart == "" {
+			continue
+		}
+
+		// Extract source file name and add to map
+		lines := strings.SplitN(manifestPart, "\n", 2)
+		var sourceFile string
+		if after, ok := strings.CutPrefix(strings.TrimSpace(lines[0]), "# Source: "); ok {
+			sourceFile = strings.TrimSpace(after)
+		} else {
+			return nil, fmt.Errorf("manifest part does not contain source comment: %s", manifestPart)
+		}
+
+		if sourceFile != "" {
+			manifestMap[sourceFile] = lines[1]
+		}
+	}
+	return manifestMap, nil
+}
+
 // renderManifests renders the release manifests to YAML.
 func renderManifests(
 	rel *release.Release,
@@ -111,12 +144,7 @@ func renderManifests(
 
 	// Add namespace manifest if CreateNamespace is true and namespace is not default
 	if createNamespace && namespace != "" && namespace != "default" {
-		manifests.WriteString("---\n")
-		manifests.WriteString("# Source: namespace.yaml\n")
-
-		namespaceMetadata := map[string]any{
-			"name": namespace,
-		}
+		namespaceMetadata := map[string]any{"name": namespace}
 		if len(namespaceLabels) > 0 {
 			labels := map[string]string{}
 			for _, label := range namespaceLabels {
@@ -124,6 +152,7 @@ func renderManifests(
 					labels[k] = v
 				}
 			}
+			maps.Copy(labels, rel.Labels) // Ensure we have a copy
 			namespaceMetadata["labels"] = labels
 		}
 
@@ -142,44 +171,14 @@ func renderManifests(
 
 		nsManifestStr := nsBuffer.String()
 		manifestMap["namespace.yaml"] = nsManifestStr
-		manifests.WriteString(nsManifestStr)
 	}
 
 	// Process main manifest
-	if rel.Manifest != "" {
-		manifestParts := strings.Split(rel.Manifest, "---\n")
-		for _, manifestPart := range manifestParts {
-			manifestPart = strings.TrimSpace(manifestPart)
-			if manifestPart == "" {
-				continue
-			}
-
-			// Extract source file name and add to map
-			lines := strings.SplitN(manifestPart, "\n", 5)
-			var sourceFile string
-			for _, line := range lines {
-				if after, ok := strings.CutPrefix(strings.TrimSpace(line), "# Source: "); ok {
-					sourceFile = strings.TrimSpace(after)
-					break
-				}
-			}
-
-			// Add Helm labels and annotations to the manifest
-			enrichedManifest, err := addHelmMetadata(manifestPart, req.ReleaseName, req.Namespace)
-			if err != nil {
-				return "", fmt.Errorf("failed to add Helm metadata: %w", err)
-			}
-
-			if sourceFile != "" {
-				manifestMap[sourceFile] = enrichedManifest
-			}
-
-			if !strings.HasPrefix(enrichedManifest, "---\n") {
-				manifests.WriteString("---\n")
-			}
-			manifests.WriteString(enrichedManifest)
-		}
+	manifestsParsed, err := manifestToMap(rel.Manifest)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse main manifest: %w", err)
 	}
+	maps.Copy(manifestMap, manifestsParsed)
 
 	// Process hooks if not disabled
 	for _, hook := range rel.Hooks {
@@ -187,24 +186,23 @@ func renderManifests(
 			continue
 		}
 
+		manifestMap[hook.Path] = hook.Manifest
+	}
+
+	fManifests := filterManifests(manifestMap, showOnly)
+
+	for source, manifest := range fManifests {
 		// Add Helm labels and annotations to hook manifests
-		enrichedHook, err := addHelmMetadata(hook.Manifest, req.ReleaseName, req.Namespace)
+		enrichedManifest, err := addHelmMetadata(manifest, req.ReleaseName, req.Namespace)
 		if err != nil {
 			return "", fmt.Errorf("failed to add Helm metadata to hook: %w", err)
 		}
-
-		manifestMap[hook.Path] = enrichedHook
 		manifests.WriteString("---\n")
-		manifests.WriteString(fmt.Sprintf("# Source: %s\n", hook.Path))
-		manifests.WriteString(enrichedHook)
+		manifests.WriteString(fmt.Sprintf("# Source: %s\n", source))
+		manifests.WriteString(enrichedManifest)
 	}
 
 	result := manifests.String()
-
-	// Filter by showOnly if specified
-	if len(showOnly) > 0 {
-		result = filterManifests(manifestMap, showOnly)
-	}
 
 	return result, nil
 }
@@ -248,58 +246,26 @@ STRATEGY VALIDATION:
 
 // filterManifests filters manifests based on showOnly patterns using a manifest map.
 // Improved implementation with O(S) complexity where S is showOnly size.
-func filterManifests(manifestMap map[string]string, showOnly []string) string {
+func filterManifests(manifestMap map[string]string, showOnly []string) map[string]string {
 	if len(showOnly) == 0 {
-		// Return all manifests joined together with proper separators
-		// Sort keys for deterministic output in tests
-		keys := make([]string, 0, len(manifestMap))
-		for k := range manifestMap {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
-
-		var result strings.Builder
-		first := true
-		for _, key := range keys {
-			manifest := strings.TrimSpace(manifestMap[key])
-			if manifest == "" {
-				continue
-			}
-			if !first {
-				result.WriteString("\n---\n")
-			} else {
-				// First manifest should start with ---
-				if !strings.HasPrefix(manifest, "---") {
-					result.WriteString("---\n")
-				}
-				first = false
-			}
-			result.WriteString(manifest)
-		}
-		return result.String()
+		return manifestMap
 	}
 
-	// Convert showOnly to a set for O(1) lookups
-	showOnlySet := make(map[string]bool, len(showOnly))
-	for _, pattern := range showOnly {
-		showOnlySet[pattern] = true
-	}
-
-	var filtered []string
+	filtered := make(map[string]string)
 
 	// Look up manifests by their source file names in the order specified in showOnly
 	// to maintain deterministic output
 	for _, pattern := range showOnly {
 		if manifest, exists := manifestMap[pattern]; exists {
-			filtered = append(filtered, strings.TrimSpace(manifest))
+			filtered[pattern] = strings.TrimSpace(manifest)
 		}
 	}
 
 	if len(filtered) > 0 {
-		return strings.Join(filtered, "\n---\n")
+		return filtered
 	}
 
-	return ""
+	return manifestMap
 }
 
 // parseKubeVersion parses a Kubernetes version string.
@@ -322,14 +288,10 @@ func mergeMaps(a, b map[string]any) map[string]any {
 	result := make(map[string]any)
 
 	// Copy from a
-	for k, v := range a {
-		result[k] = v
-	}
+	maps.Copy(result, a)
 
 	// Override/add from b
-	for k, v := range b {
-		result[k] = v
-	}
+	maps.Copy(result, b)
 
 	return result
 }
