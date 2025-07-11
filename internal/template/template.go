@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/appkins-org/helm-api/internal/config"
@@ -206,9 +207,12 @@ func manifestMapToYAML(manifest map[string]any) (string, error) {
 	return buffer.String(), nil
 }
 
-// manifestToMap converts a multi-document YAML string to a map of individual manifests
-func manifestToMap(manifest string) (map[string]string, error) {
-	manifestMap := make(map[string]string)
+// manifestToMap converts a multi-document YAML string to a map of manifests grouped by source file
+// Returns: map[sourceFile][]manifest, originalOrder of sourceFile keys, error
+func manifestToMap(manifest string) (map[string][]string, []string, error) {
+	manifestMap := make(map[string][]string)
+	var originalOrder []string
+	seenFiles := make(map[string]bool)
 	manifestParts := strings.SplitSeq(manifest, "---\n")
 
 	for manifestPart := range manifestParts {
@@ -271,17 +275,23 @@ func manifestToMap(manifest string) (map[string]string, error) {
 			continue
 		}
 
-		// If the original source line has extra whitespace, preserve it
+		// Track the original order of source files
+		if !seenFiles[sourceFile] {
+			originalOrder = append(originalOrder, sourceFile)
+			seenFiles[sourceFile] = true
+		}
+
+		// Store the manifest content, appending to the array for this source file
 		if originalSourceLine != "" && strings.Contains(originalSourceLine, "  ") {
 			// Store the manifest with the original source comment for tests that expect it
-			manifestMap[sourceFile] = strings.TrimSpace(originalSourceLine) + "\n" + currentManifest
+			manifestMap[sourceFile] = append(manifestMap[sourceFile], strings.TrimSpace(originalSourceLine)+"\n"+currentManifest)
 		} else {
-			// Use the source file name as the key
-			manifestMap[sourceFile] = currentManifest
+			// Store the manifest content
+			manifestMap[sourceFile] = append(manifestMap[sourceFile], currentManifest)
 		}
 	}
 
-	return manifestMap, nil
+	return manifestMap, originalOrder, nil
 }
 
 // joinManifestMap converts a map of manifests back to a single YAML document
@@ -291,12 +301,25 @@ func joinManifestMap(manifestMap map[string]string) string {
 		return ""
 	}
 
-	// Sort keys for deterministic output when no specific order is required
+	// Sort keys for deterministic output, but prioritize namespace.yaml
 	keys := make([]string, 0, len(manifestMap))
+	var namespaceKey string
+
 	for k := range manifestMap {
-		keys = append(keys, k)
+		if k == "namespace.yaml" {
+			namespaceKey = k
+		} else {
+			keys = append(keys, k)
+		}
 	}
+
+	// Sort non-namespace keys
 	slices.Sort(keys)
+
+	// Put namespace first if it exists
+	if namespaceKey != "" {
+		keys = append([]string{namespaceKey}, keys...)
+	}
 
 	var result strings.Builder
 	for i, key := range keys {
@@ -325,8 +348,8 @@ func joinManifestMap(manifestMap map[string]string) string {
 }
 
 // joinManifestMapWithOrder converts a map of manifests back to a single YAML document
-// preserving the order from showOnly
-func joinManifestMapWithOrder(manifestMap map[string]string, showOnly []string) string {
+// preserving the order from showOnly or originalOrder
+func joinManifestMapWithOrder(manifestMap map[string]string, showOnly []string, originalOrder []string) string {
 	if len(manifestMap) == 0 {
 		return ""
 	}
@@ -348,21 +371,66 @@ func joinManifestMapWithOrder(manifestMap map[string]string, showOnly []string) 
 				}
 				first = false
 
+				// Extract source file name from the flattened key
+				sourceFile := extractSourceFileName(key)
+
 				// Check if manifest already has source comment (for special test cases)
 				if strings.HasPrefix(manifest, "# Source: ") {
 					result.WriteString(manifest)
 				} else {
-					result.WriteString(fmt.Sprintf("# Source: %s\n", key))
+					result.WriteString(fmt.Sprintf("# Source: %s\n", sourceFile))
+					result.WriteString(manifest)
+				}
+			}
+		}
+	} else if len(originalOrder) > 0 {
+		// Use the original order from the manifest
+		for _, key := range originalOrder {
+			if manifest, exists := manifestMap[key]; exists {
+				manifest = strings.TrimSpace(manifest)
+				if manifest == "" {
+					continue
+				}
+
+				if !first {
+					result.WriteString("\n---\n")
+				}
+				first = false
+
+				// Extract source file name from the flattened key
+				sourceFile := extractSourceFileName(key)
+
+				// Check if manifest already has source comment (for special test cases)
+				if strings.HasPrefix(manifest, "# Source: ") {
+					result.WriteString(manifest)
+				} else {
+					result.WriteString(fmt.Sprintf("# Source: %s\n", sourceFile))
 					result.WriteString(manifest)
 				}
 			}
 		}
 	} else {
-		// Fall back to sorted order if no showOnly
+		// Fall back to sorted order if no showOnly or originalOrder
 		return joinManifestMap(manifestMap)
 	}
 
 	return result.String()
+}
+
+// extractSourceFileName extracts the source file name from a flattened key
+// Handles both flattened keys (sourceFile-index) and regular keys
+func extractSourceFileName(key string) string {
+	// Check if the key has an index suffix (e.g., "file.yaml-0", "file.yaml-1")
+	if lastDash := strings.LastIndex(key, "-"); lastDash > 0 {
+		// Check if everything after the last dash is a number
+		suffix := key[lastDash+1:]
+		if _, err := strconv.Atoi(suffix); err == nil {
+			// It's a number, so this is likely an indexed key
+			return key[:lastDash]
+		}
+	}
+	// Return the key as-is if it doesn't match the indexed pattern
+	return key
 }
 
 // processManifestMap processes a map of manifests and applies all necessary transformations
@@ -396,6 +464,71 @@ func processManifestMap(manifestMap map[string]string, req TemplateRequest, name
 	return processedMap, nil
 }
 
+// processManifestMap2D processes a 2D map of manifests and applies all necessary transformations
+func processManifestMap2D(manifestMap map[string][]string, req TemplateRequest, namespaceLabels []string) (map[string][]string, error) {
+	processedMap := make(map[string][]string)
+
+	for sourceFile, manifests := range manifestMap {
+		var processedManifests []string
+
+		for _, manifestContent := range manifests {
+			// Parse the manifest
+			parsedManifest, err := parseManifestYAML(manifestContent)
+			if err != nil {
+				// If we can't parse as YAML, keep as-is
+				processedManifests = append(processedManifests, manifestContent)
+				continue
+			}
+
+			// Add namespace labels to all namespace resources
+			addNamespaceLabelsToManifest(parsedManifest, namespaceLabels)
+
+			// Add Helm metadata
+			addHelmMetadataToManifest(parsedManifest, req.ReleaseName, req.Namespace)
+
+			// Convert back to YAML
+			processedYAML, err := manifestMapToYAML(parsedManifest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert manifest back to YAML: %w", err)
+			}
+
+			processedManifests = append(processedManifests, processedYAML)
+		}
+
+		processedMap[sourceFile] = processedManifests
+	}
+
+	return processedMap, nil
+}
+
+// flattenManifestMap converts a map[string][]string to a flat map for backward compatibility
+// Returns: map[sourceFile-index]manifest, []string order
+func flattenManifestMap(nestedMap map[string][]string, originalOrder []string) (map[string]string, []string) {
+	flatMap := make(map[string]string)
+	var flatOrder []string
+
+	// Process files in original order
+	for _, sourceFile := range originalOrder {
+		if manifests, exists := nestedMap[sourceFile]; exists {
+			for i, manifest := range manifests {
+				var flatKey string
+				if len(manifests) == 1 {
+					// If only one manifest in the file, use the original file name
+					flatKey = sourceFile
+				} else {
+					// If multiple manifests, append index for uniqueness
+					flatKey = fmt.Sprintf("%s-%d", sourceFile, i)
+				}
+
+				flatMap[flatKey] = manifest
+				flatOrder = append(flatOrder, flatKey)
+			}
+		}
+	}
+
+	return flatMap, flatOrder
+}
+
 // renderManifests renders the release manifests to YAML.
 func renderManifests(
 	rel *release.Release,
@@ -406,7 +539,8 @@ func renderManifests(
 	namespaceLabels []string,
 	req TemplateRequest,
 ) (string, error) {
-	manifestMap := make(map[string]string)
+	// Create a 2D map to hold manifests grouped by source file
+	manifestMap := make(map[string][]string)
 
 	// Add namespace manifest if CreateNamespace is true and namespace is not default
 	if createNamespace && namespace != "" && namespace != "default" {
@@ -435,35 +569,89 @@ func renderManifests(
 			return "", fmt.Errorf("failed to encode namespace manifest: %w", err)
 		}
 
-		manifestMap["namespace.yaml"] = nsManifestStr
+		manifestMap["namespace.yaml"] = []string{nsManifestStr}
 	}
 
 	// Process main manifest
-	manifestsParsed, err := manifestToMap(rel.Manifest)
+	manifestsParsed, manifestOrder, err := manifestToMap(rel.Manifest)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse main manifest: %w", err)
 	}
-	maps.Copy(manifestMap, manifestsParsed)
+
+	// Merge the parsed manifests into the main map
+	for sourceFile, manifests := range manifestsParsed {
+		manifestMap[sourceFile] = manifests
+	}
+
+	// Preserve the original order, but put namespace first if it exists
+	var finalOrder []string
+	if _, hasNamespace := manifestMap["namespace.yaml"]; hasNamespace && createNamespace {
+		finalOrder = append(finalOrder, "namespace.yaml")
+	}
+
+	// Add the original manifest order
+	for _, key := range manifestOrder {
+		// Skip namespace.yaml if we already added it
+		if key != "namespace.yaml" {
+			finalOrder = append(finalOrder, key)
+		}
+	}
 
 	// Process hooks if not disabled
 	for _, hook := range rel.Hooks {
 		if skipTests && isTestHook(hook) {
 			continue
 		}
-		manifestMap[hook.Path] = hook.Manifest
+		manifestMap[hook.Path] = []string{hook.Manifest}
+		// Add hooks to the end of the order if not already present
+		if !slices.Contains(finalOrder, hook.Path) {
+			finalOrder = append(finalOrder, hook.Path)
+		}
 	}
 
 	// Process all manifests (add metadata, namespace labels, etc.)
-	processedMap, err := processManifestMap(manifestMap, req, namespaceLabels)
+	processedMap, err := processManifestMap2D(manifestMap, req, namespaceLabels)
 	if err != nil {
 		return "", fmt.Errorf("failed to process manifest map: %w", err)
 	}
 
-	// Filter manifests based on showOnly
+	// Filter manifests based on showOnly - this preserves the 2D map structure
 	filteredMap := filterManifests(processedMap, showOnly)
 
-	// Join the final manifest map into a single YAML document
-	return joinManifestMapWithOrder(filteredMap, showOnly), nil
+	// Determine the order to use for flattening
+	var orderToUse []string
+	if len(showOnly) > 0 {
+		// Use showOnly order if provided
+		orderToUse = showOnly
+	} else {
+		// Use the original order
+		orderToUse = finalOrder
+	}
+
+	// Flatten the filtered 2D map using the determined order
+	flatManifests := make(map[string]string)
+	var flatOrder []string
+
+	for _, sourceFile := range orderToUse {
+		if manifests, exists := filteredMap[sourceFile]; exists {
+			for i, manifest := range manifests {
+				var flatKey string
+				if len(manifests) == 1 {
+					// If only one manifest in the file, use the original file name
+					flatKey = sourceFile
+				} else {
+					// If multiple manifests, append index for uniqueness
+					flatKey = fmt.Sprintf("%s-%d", sourceFile, i)
+				}
+
+				flatManifests[flatKey] = manifest
+				flatOrder = append(flatOrder, flatKey)
+			}
+		}
+	}
+
+	// Join the final manifest map into a single YAML document using preserved order
+	return joinManifestMapWithOrder(flatManifests, nil, flatOrder), nil
 }
 
 // isTestHook checks if a hook is a test hook.
@@ -471,24 +659,24 @@ func isTestHook(hook *release.Hook) bool {
 	return slices.Contains(hook.Events, release.HookTest)
 }
 
-// filterManifests filters manifests based on showOnly patterns using a manifest map.
-// Improved implementation with O(S) complexity where S is showOnly size.
-func filterManifests(manifestMap map[string]string, showOnly []string) map[string]string {
+// filterManifests filters manifests based on showOnly patterns using a 2D manifest map.
+// Returns a filtered 2D map where matching source files have all their manifests included.
+func filterManifests(manifestMap map[string][]string, showOnly []string) map[string][]string {
 	if len(showOnly) == 0 {
+		// If no filter, return the entire map
 		return manifestMap
 	}
 
-	filtered := make(map[string]string)
+	filtered := make(map[string][]string)
 
 	// Look up manifests by their source file names in the order specified in showOnly
-	// to maintain deterministic output
 	for _, pattern := range showOnly {
-		if manifest, exists := manifestMap[pattern]; exists {
-			filtered[pattern] = strings.TrimSpace(manifest)
+		if manifests, exists := manifestMap[pattern]; exists {
+			// Add all manifests from this source file
+			filtered[pattern] = manifests
 		}
 	}
 
-	// Return filtered results if any matches found, otherwise return empty map
 	return filtered
 }
 

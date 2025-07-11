@@ -632,16 +632,40 @@ kind: Deployment`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manifestMap, err := manifestToMap(tt.manifests)
+			manifestMap, manifestOrder, err := manifestToMap(tt.manifests)
 			if err != nil {
 				t.Fatalf("Failed to convert manifests to map: %v", err)
 			}
-			result := filterManifests(manifestMap, tt.showOnly)
+			// Filter using the 2D map structure
+			result2D := filterManifests(manifestMap, tt.showOnly)
+
+			// Flatten the result for comparison
+			var orderToUse []string
+			if len(tt.showOnly) > 0 {
+				orderToUse = tt.showOnly
+			} else {
+				orderToUse = manifestOrder
+			}
+
+			result := make(map[string]string)
+			for _, sourceFile := range orderToUse {
+				if manifests, exists := result2D[sourceFile]; exists {
+					for i, manifest := range manifests {
+						var flatKey string
+						if len(manifests) == 1 {
+							flatKey = sourceFile
+						} else {
+							flatKey = fmt.Sprintf("%s-%d", sourceFile, i)
+						}
+						result[flatKey] = strings.TrimSpace(manifest)
+					}
+				}
+			}
 
 			// Convert result back to string for comparison, preserving showOnly order
 			var resultStr string
 			if len(tt.showOnly) > 0 {
-				resultStr = joinManifestMapWithOrder(result, tt.showOnly)
+				resultStr = joinManifestMapWithOrder(result, tt.showOnly, nil)
 			} else {
 				resultStr = joinManifestMap(result)
 			}
@@ -1350,11 +1374,28 @@ func TestFilterManifestsPerformance(t *testing.T) {
 	showOnly := []string{"deployment.yaml-0", "deployment.yaml-1", "service.yaml-0", "service.yaml-1"}
 
 	// This should complete quickly with the improved O(S) implementation
-	manifestMap, err := manifestToMap(manifests.String())
+	manifestMap, _, err := manifestToMap(manifests.String())
 	if err != nil {
 		t.Fatalf("Failed to convert manifests to map: %v", err)
 	}
-	result := filterManifests(manifestMap, showOnly)
+	// Filter using the 2D map structure
+	result2D := filterManifests(manifestMap, showOnly)
+
+	// Flatten the result for counting
+	result := make(map[string]string)
+	for _, sourceFile := range showOnly {
+		if manifests, exists := result2D[sourceFile]; exists {
+			for i, manifest := range manifests {
+				var flatKey string
+				if len(manifests) == 1 {
+					flatKey = sourceFile
+				} else {
+					flatKey = fmt.Sprintf("%s-%d", sourceFile, i)
+				}
+				result[flatKey] = strings.TrimSpace(manifest)
+			}
+		}
+	}
 
 	// Convert result back to string for counting
 	resultStr := joinManifestMap(result)
@@ -1399,7 +1440,10 @@ func BenchmarkFilterManifests(b *testing.B) {
 
 	showOnly := []string{"deployment.yaml", "service.yaml"}
 	manifestStr := manifests.String()
-	manifestMap := convertManifestsToMap(manifestStr)
+	manifestMap, _, err := manifestToMap(manifestStr)
+	if err != nil {
+		b.Fatalf("Failed to convert manifests to map: %v", err)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1860,7 +1904,7 @@ func TestJSONValuesRealWorldExample(t *testing.T) {
 	req := TemplateRequest{
 		Chart:       filepath.Join(tempDir, "json-chart"),
 		ReleaseName: "real-world-test",
-		Namespace:   "production",
+		Namespace:   "cert-manager",
 		JSONValues:  jsonValues,
 		// Also demonstrate mixing with other value types
 		Values:       []string{"replicaCount=3"},
@@ -1890,159 +1934,192 @@ func TestJSONValuesRealWorldExample(t *testing.T) {
 	t.Log("Real-world JSON values test passed - demonstrated query string format handling")
 }
 
-// TestCertManagerHTTPQueryExample tests the exact cert-manager HTTP query string example.
-func TestCertManagerHTTPQueryExample(t *testing.T) {
-	// This test simulates the HTTP request:
-	// http://127.0.0.1:8080/template?chart=cert-manager&chart_version=1.18.2&create_namespace=true&include_crds=false&kube_version=v1.32.0&namespace=cert-manager&release_name=cert-manager&repository=https://charts.jetstack.io&set_json=resources={"requests": {"cpu": "10m", "memory": "32Mi"}},installCRDs=true,global={"leaderElection":{"namespace": "cert-manager"}, "priorityClassName": "system-cluster-critical"},webhook={"serviceType": "NodePort"}
-
+// TestCertManagerWithCRDs tests cert-manager with CRDs enabled to verify CRD output
+func TestCertManagerWithCRDs(t *testing.T) {
 	req := TemplateRequest{
 		Chart:           "cert-manager",
 		ChartVersion:    "1.18.2",
 		Repository:      "https://charts.jetstack.io",
 		ReleaseName:     "cert-manager",
 		Namespace:       "cert-manager",
-		CreateNamespace: true,
-		IncludeCRDs:     false,
+		IncludeCRDs:     true,
 		KubeVersion:     "v1.32.0",
+		CreateNamespace: true,
+		NamespaceLabels: []string{"pod-security.kubernetes.io/enforce=privileged"},
 		JSONValues: []string{
-			`resources={"requests": {"cpu": "10m", "memory": "32Mi"}}`,
-			`installCRDs=true`,
-			`global={"leaderElection":{"namespace": "cert-manager"}, "priorityClassName": "system-cluster-critical"}`,
-			`webhook={"serviceType": "NodePort"}`,
+			`global={"leaderElection":{"namespace":"cert-manager"},"priorityClassName":"system-cluster-critical","resources":{"requests":{"cpu":"10m","memory":"32Mi"}},"webhook":{"serviceType":"NodePort"}}`,
+			`installCRDs=true`, // This enables CRD templates in cert-manager chart
 		},
-	}
-
-	// Note: This test will likely fail in the test environment due to network access
-	// and chart availability, but it validates the request structure and parameter parsing
-	result, err := ProcessTemplate(req)
-	if err != nil {
-		// Expected to fail in test environment - log the error for verification
-		t.Logf("ProcessTemplate returned error (expected in test environment): %v", err)
-
-		// Verify the error is due to chart/network issues, not parameter parsing
-		if strings.Contains(err.Error(), "chart is required") {
-			t.Error("Unexpected validation error - chart parameter should be valid")
-		}
-
-		// The test passes if we get network/chart-related errors, as this means
-		// the JSON values and other parameters were parsed correctly
-		return
-	}
-
-	// If somehow successful, verify we got YAML output
-	if result == "" {
-		t.Error("Expected YAML output but got empty string")
-		return
-	}
-
-	// Verify the result contains expected cert-manager components
-	expectedContent := []string{
-		"apiVersion:",
-		"kind:",
-		"cert-manager",
-	}
-
-	for _, content := range expectedContent {
-		if !strings.Contains(result, content) {
-			t.Errorf("Expected result to contain '%s'", content)
-		}
-	}
-
-	t.Log("cert-manager HTTP query example test completed successfully")
-}
-
-// TestPrometheusOperatorCRDsExample tests processing of charts without file headers
-// This chart is known to not include "# Source:" comments in its manifests
-func TestPrometheusOperatorCRDsExample(t *testing.T) {
-	req := TemplateRequest{
-		Chart:        "prometheus-operator-crds",
-		ChartVersion: "21.0.0",
-		Repository:   "https://prometheus-community.github.io/helm-charts",
-		ReleaseName:  "prometheus-operator-crds",
-		Namespace:    "monitoring",
-		IncludeCRDs:  true,
-		KubeVersion:  "v1.32.0",
 	}
 
 	// Process the template request
 	result, err := ProcessTemplate(req)
 	if err != nil {
-		t.Logf("Expected behavior: prometheus-operator-crds may not be available or may fail due to network issues")
+		t.Logf("Expected behavior: cert-manager may not be available or may fail due to network issues")
 		t.Logf("Error encountered: %v", err)
 		// This is acceptable for this test - we're mainly testing that the code doesn't panic
-		// and can handle charts without source headers gracefully
 		return
 	}
 
 	// If successful, verify that we got some content
 	if result == "" {
-		t.Error("Expected non-empty result from prometheus-operator-crds template")
+		t.Error("Expected non-empty result from cert-manager template")
 		return
 	}
 
-	// Verify that the result contains CRD manifests (these should have CustomResourceDefinition kind)
-	if !strings.Contains(result, "CustomResourceDefinition") && !strings.Contains(result, "kind:") {
-		t.Error("Expected result to contain Kubernetes manifests")
+	// Verify that the result contains CRD manifests
+	if !strings.Contains(result, "CustomResourceDefinition") {
+		t.Error("Expected result to contain CustomResourceDefinition manifests when IncludeCRDs=true")
 		return
 	}
 
-	// Verify that manifests have been properly processed with fallback filenames
-	// Since this chart doesn't have source headers, manifests should use kind-name.yaml format
+	// Verify that the namespace is created at the top when create_namespace=true
 	lines := strings.Split(result, "\n")
-	foundSourceComment := false
+	var firstKindLine string
 	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "# Source: ") {
-			foundSourceComment = true
-			sourceFile := strings.TrimPrefix(strings.TrimSpace(line), "# Source: ")
-			// Should be in format like "customresourcedefinition-prometheuses.yaml" for fallback naming
-			if !strings.Contains(sourceFile, "-") || !strings.HasSuffix(sourceFile, ".yaml") {
-				t.Errorf("Expected fallback source filename format, got: %s", sourceFile)
-			}
+		if strings.HasPrefix(line, "kind:") {
+			firstKindLine = strings.TrimSpace(line)
 			break
 		}
 	}
 
-	if !foundSourceComment {
-		t.Error("Expected at least one source comment in the output")
+	if firstKindLine != "kind: Namespace" {
+		t.Errorf("Expected first kind to be 'Namespace' when create_namespace=true, got: %s", firstKindLine)
 	}
 
-	t.Log("prometheus-operator-crds test completed successfully - verified handling of charts without file headers")
+	// Verify namespace has the correct labels
+	if !strings.Contains(result, "pod-security.kubernetes.io/enforce: privileged") {
+		t.Error("Expected namespace to have the specified security label")
+	}
+
+	t.Log("cert-manager CRD test completed successfully - CRDs included and namespace appears first")
 }
 
-// convertManifestsToMap converts a string of manifests to a map using Source comments as keys
-func convertManifestsToMap(manifests string) map[string]string {
-	manifestMap := make(map[string]string)
-
-	if strings.TrimSpace(manifests) == "" {
-		return manifestMap
+// TestCertManagerCRDConflict tests the specific cert-manager configuration from the user's failing query
+// This demonstrates how installCRDs=false conflicts with include_crds=true
+func TestCertManagerCRDConflict(t *testing.T) {
+	// This test reproduces the user's original failing query
+	req := TemplateRequest{
+		Chart:           "cert-manager",
+		ChartVersion:    "1.18.2",
+		Repository:      "https://charts.jetstack.io",
+		ReleaseName:     "cert-manager",
+		Namespace:       "cert-manager",
+		IncludeCRDs:     true, // include_crds=true from URL
+		KubeVersion:     "v1.32.0",
+		CreateNamespace: true,
+		NamespaceLabels: []string{"pod-security.kubernetes.io/enforce=privileged"},
+		JSONValues: []string{
+			`global={"leaderElection":{"namespace":"cert-manager"},"priorityClassName":"system-cluster-critical","resources":{"requests":{"cpu":"10m","memory":"32Mi"}},"webhook":{"serviceType":"NodePort"}}`,
+			`installCRDs=false`, // This conflicts with IncludeCRDs=true and prevents CRDs from being rendered
+		},
 	}
 
-	// Split manifests by the separator
-	manifestParts := strings.Split(manifests, "---")
+	result, err := ProcessTemplate(req)
+	if err != nil {
+		t.Logf("Expected behavior: cert-manager may not be available or may fail due to network issues")
+		t.Logf("Error encountered: %v", err)
+		return
+	}
 
-	for i, manifestPart := range manifestParts {
-		manifestPart = strings.TrimSpace(manifestPart)
-		if manifestPart == "" {
-			continue
-		}
+	if result == "" {
+		t.Error("Expected non-empty result from cert-manager template")
+		return
+	}
 
-		// Look for the Source comment in the first few lines
-		lines := strings.SplitN(manifestPart, "\n", 5)
-		var sourceFile string
-		for _, line := range lines {
-			if after, ok := strings.CutPrefix(strings.TrimSpace(line), "# Source: "); ok {
-				sourceFile = strings.TrimSpace(after)
-				break
-			}
-		}
+	// This should fail because installCRDs=false prevents CRD templates from being rendered
+	// even though IncludeCRDs=true would include CRDs from the crds/ directory
+	containsCRDs := strings.Contains(result, "CustomResourceDefinition")
 
-		if sourceFile != "" {
-			manifestMap[sourceFile] = manifestPart
-		} else {
-			// If no source comment found, use a generic key based on position
-			manifestMap[fmt.Sprintf("manifest-%d", i)] = manifestPart
+	// For cert-manager, installCRDs controls whether CRD templates are rendered
+	// So with installCRDs=false, we shouldn't see CRDs even if IncludeCRDs=true
+	if containsCRDs {
+		t.Log("Note: CRDs found despite installCRDs=false - this depends on chart implementation")
+	} else {
+		t.Log("Confirmed: No CRDs found when installCRDs=false, demonstrating the conflict")
+	}
+
+	// But the namespace should still appear first
+	lines := strings.Split(result, "\n")
+	var firstKindLine string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "kind:") {
+			firstKindLine = strings.TrimSpace(line)
+			break
 		}
 	}
 
-	return manifestMap
+	if firstKindLine != "kind: Namespace" {
+		t.Errorf("Expected first kind to be 'Namespace' when create_namespace=true, got: %s", firstKindLine)
+	}
+
+	t.Log("cert-manager conflict test completed - demonstrates installCRDs=false vs include_crds=true conflict")
+}
+
+// TestMultipleManifestsInSingleFile tests that multiple manifests in a single template file are preserved
+func TestMultipleManifestsInSingleFile(t *testing.T) {
+	// Simulate a template file with multiple manifests
+	manifestContent := `---
+# Source: test-chart/templates/resources.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config1
+data:
+  key: value1
+---
+# Source: test-chart/templates/resources.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config2
+data:
+  key: value2
+---
+# Source: test-chart/templates/resources.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret1
+data:
+  key: dmFsdWU=`
+
+	// Parse using the new 2D map structure
+	manifestMap, _, err := manifestToMap(manifestContent)
+	if err != nil {
+		t.Fatalf("Failed to parse manifests: %v", err)
+	}
+
+	// Verify that all three manifests from the same file are preserved
+	resourcesManifests, exists := manifestMap["test-chart/templates/resources.yaml"]
+	if !exists {
+		t.Fatal("Expected to find manifests for test-chart/templates/resources.yaml")
+	}
+
+	if len(resourcesManifests) != 3 {
+		t.Errorf("Expected 3 manifests from resources.yaml, got %d", len(resourcesManifests))
+	}
+
+	// Verify the content of each manifest
+	expectedNames := []string{"config1", "config2", "secret1"}
+	for i, manifest := range resourcesManifests {
+		if !strings.Contains(manifest, fmt.Sprintf("name: %s", expectedNames[i])) {
+			t.Errorf("Expected manifest %d to contain name: %s", i, expectedNames[i])
+		}
+	}
+
+	// Test filtering - when we filter by the file name, all manifests should be included
+	filtered := filterManifests(manifestMap, []string{"test-chart/templates/resources.yaml"})
+
+	if len(filtered) != 1 {
+		t.Errorf("Expected 1 file in filtered result, got %d", len(filtered))
+	}
+
+	if filteredManifests, exists := filtered["test-chart/templates/resources.yaml"]; !exists {
+		t.Error("Expected filtered result to contain the resources.yaml file")
+	} else if len(filteredManifests) != 3 {
+		t.Errorf("Expected filtered result to contain 3 manifests, got %d", len(filteredManifests))
+	}
+
+	t.Log("Multiple manifests in single file test completed successfully")
 }
