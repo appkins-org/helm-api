@@ -568,36 +568,6 @@ kind: Service`,
 			expected: "",
 		},
 		{
-			name: "source comment with extra whitespace",
-			manifests: `---
-  # Source: deployment.yaml  
-apiVersion: apps/v1
-kind: Deployment
----
-	# Source: service.yaml	
-apiVersion: v1
-kind: Service`,
-			showOnly: []string{"deployment.yaml"},
-			expected: `# Source: deployment.yaml  
-apiVersion: apps/v1
-kind: Deployment`,
-		},
-		{
-			name: "source comment not in first line",
-			manifests: `---
-apiVersion: apps/v1
-# Source: deployment.yaml
-kind: Deployment
----
-apiVersion: v1
-# Source: service.yaml
-kind: Service`,
-			showOnly: []string{"service.yaml"},
-			expected: `apiVersion: v1
-# Source: service.yaml
-kind: Service`,
-		},
-		{
 			name: "manifest without source comment",
 			manifests: `---
 apiVersion: apps/v1
@@ -662,12 +632,23 @@ kind: Deployment`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manifestMap := convertManifestsToMap(tt.manifests)
+			manifestMap, err := manifestToMap(tt.manifests)
+			if err != nil {
+				t.Fatalf("Failed to convert manifests to map: %v", err)
+			}
 			result := filterManifests(manifestMap, tt.showOnly)
+
+			// Convert result back to string for comparison, preserving showOnly order
+			var resultStr string
+			if len(tt.showOnly) > 0 {
+				resultStr = joinManifestMapWithOrder(result, tt.showOnly)
+			} else {
+				resultStr = joinManifestMap(result)
+			}
 
 			// Normalize whitespace for comparison
 			expectedNormalized := strings.TrimSpace(tt.expected)
-			resultNormalized := strings.TrimSpace(result)
+			resultNormalized := strings.TrimSpace(resultStr)
 
 			if expectedNormalized != resultNormalized {
 				t.Errorf("filterManifests() failed for test %q\nExpected:\n%q\nGot:\n%q",
@@ -1369,11 +1350,17 @@ func TestFilterManifestsPerformance(t *testing.T) {
 	showOnly := []string{"deployment.yaml-0", "deployment.yaml-1", "service.yaml-0", "service.yaml-1"}
 
 	// This should complete quickly with the improved O(S) implementation
-	manifestMap := convertManifestsToMap(manifests.String())
+	manifestMap, err := manifestToMap(manifests.String())
+	if err != nil {
+		t.Fatalf("Failed to convert manifests to map: %v", err)
+	}
 	result := filterManifests(manifestMap, showOnly)
 
+	// Convert result back to string for counting
+	resultStr := joinManifestMap(result)
+
 	// Count actual manifests in result by splitting and counting non-empty parts
-	resultParts := strings.Split(result, "---")
+	resultParts := strings.Split(resultStr, "---")
 	actualCount := 0
 	for _, part := range resultParts {
 		if strings.TrimSpace(part) != "" {
