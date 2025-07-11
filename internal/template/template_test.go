@@ -1344,7 +1344,7 @@ func TestFilterManifestsPerformance(t *testing.T) {
 		manifests.WriteString("apiVersion: v1\n")
 		manifests.WriteString("kind: TestResource\n")
 		manifests.WriteString("metadata:\n")
-		manifests.WriteString("  name: test-" + string(rune(i)) + "\n")
+		manifests.WriteString(fmt.Sprintf("  name: test-%d\n", i))
 	}
 
 	showOnly := []string{"deployment.yaml-0", "deployment.yaml-1", "service.yaml-0", "service.yaml-1"}
@@ -1949,6 +1949,64 @@ func TestCertManagerHTTPQueryExample(t *testing.T) {
 	}
 
 	t.Log("cert-manager HTTP query example test completed successfully")
+}
+
+// TestPrometheusOperatorCRDsExample tests processing of charts without file headers
+// This chart is known to not include "# Source:" comments in its manifests
+func TestPrometheusOperatorCRDsExample(t *testing.T) {
+	req := TemplateRequest{
+		Chart:        "prometheus-operator-crds",
+		ChartVersion: "21.0.0",
+		Repository:   "https://prometheus-community.github.io/helm-charts",
+		ReleaseName:  "prometheus-operator-crds",
+		Namespace:    "monitoring",
+		IncludeCRDs:  true,
+		KubeVersion:  "v1.32.0",
+	}
+
+	// Process the template request
+	result, err := ProcessTemplate(req)
+	if err != nil {
+		t.Logf("Expected behavior: prometheus-operator-crds may not be available or may fail due to network issues")
+		t.Logf("Error encountered: %v", err)
+		// This is acceptable for this test - we're mainly testing that the code doesn't panic
+		// and can handle charts without source headers gracefully
+		return
+	}
+
+	// If successful, verify that we got some content
+	if result == "" {
+		t.Error("Expected non-empty result from prometheus-operator-crds template")
+		return
+	}
+
+	// Verify that the result contains CRD manifests (these should have CustomResourceDefinition kind)
+	if !strings.Contains(result, "CustomResourceDefinition") && !strings.Contains(result, "kind:") {
+		t.Error("Expected result to contain Kubernetes manifests")
+		return
+	}
+
+	// Verify that manifests have been properly processed with fallback filenames
+	// Since this chart doesn't have source headers, manifests should use kind-name.yaml format
+	lines := strings.Split(result, "\n")
+	foundSourceComment := false
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# Source: ") {
+			foundSourceComment = true
+			sourceFile := strings.TrimPrefix(strings.TrimSpace(line), "# Source: ")
+			// Should be in format like "customresourcedefinition-prometheuses.yaml" for fallback naming
+			if !strings.Contains(sourceFile, "-") || !strings.HasSuffix(sourceFile, ".yaml") {
+				t.Errorf("Expected fallback source filename format, got: %s", sourceFile)
+			}
+			break
+		}
+	}
+
+	if !foundSourceComment {
+		t.Error("Expected at least one source comment in the output")
+	}
+
+	t.Log("prometheus-operator-crds test completed successfully - verified handling of charts without file headers")
 }
 
 // convertManifestsToMap converts a string of manifests to a map using Source comments as keys

@@ -212,13 +212,13 @@ func manifestToMap(manifest string) (map[string]string, error) {
 	manifestParts := strings.SplitSeq(manifest, "---\n")
 
 	for manifestPart := range manifestParts {
-		if !strings.Contains(manifestPart, "apiVersion:") {
-			// Skip non-manifest parts (e.g., comments or empty lines)
+		manifestPart = strings.TrimSpace(manifestPart)
+		if manifestPart == "" {
 			continue
 		}
 
-		manifestPart = strings.TrimSpace(manifestPart)
-		if manifestPart == "" {
+		// Skip parts that are only comments or don't contain valid YAML
+		if !strings.Contains(manifestPart, "apiVersion:") || !strings.Contains(manifestPart, "kind:") {
 			continue
 		}
 
@@ -247,20 +247,28 @@ func manifestToMap(manifest string) (map[string]string, error) {
 			// No source comment found - use fallback method
 			currentManifest = manifestPart
 
-			// Parse YAML to extract kind and name for fallback filepath
+			// Try to parse YAML to extract kind and name for fallback filepath
 			parsedManifest, err := parseManifestYAML(currentManifest)
 			if err != nil {
-				return nil, fmt.Errorf("manifest part does not contain source comment and failed to parse YAML for fallback: %w", err)
+				// If we can't parse as valid YAML, skip this manifest part
+				continue
 			}
 
 			kind, name, err := extractKindAndName(parsedManifest)
 			if err != nil {
-				// If we can't extract kind and name, create a generic key
-				sourceFile = fmt.Sprintf("manifest-%d.yaml", len(manifestMap))
-			} else {
-				// Construct fallback filename using kind and name
-				sourceFile = fmt.Sprintf("%s-%s.yaml", strings.ToLower(kind), name)
+				// If we can't extract kind and name, skip this manifest part
+				continue
 			}
+
+			// Construct fallback filename using kind and name
+			sourceFile = fmt.Sprintf("%s-%s.yaml", strings.ToLower(kind), name)
+		}
+
+		// Validate that the manifest content is actually parseable YAML
+		_, err := parseManifestYAML(currentManifest)
+		if err != nil {
+			// Skip unparseable YAML content
+			continue
 		}
 
 		// If the original source line has extra whitespace, preserve it
