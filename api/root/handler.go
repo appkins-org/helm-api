@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-
-	"github.com/appkins-org/helm-api/api"
 )
 
 // handler handles health check requests.
@@ -14,7 +12,7 @@ type handler struct {
 }
 
 // NewHandler creates a new health handler.
-func New(logger *slog.Logger) api.Handler {
+func New(logger *slog.Logger) http.Handler {
 	return &handler{
 		logger: logger,
 	}

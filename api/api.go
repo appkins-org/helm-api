@@ -9,7 +9,7 @@ import (
 	"github.com/appkins-org/helm-api/internal/config"
 )
 
-type HandlerMapping map[string]Handler
+type HandlerMapping map[string]http.Handler
 
 // Api represents the HTTP API server with all its dependencies.
 type Api struct {
@@ -28,7 +28,7 @@ func New(cfg *config.Config, logger *slog.Logger) *Api {
 	}
 }
 
-func (a *Api) AddHandler(path string, handler Handler) {
+func (a *Api) AddHandler(path string, handler http.Handler) {
 	if handler != nil {
 		a.handlers[path] = handler
 	} else {

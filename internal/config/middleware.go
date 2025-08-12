@@ -19,6 +19,8 @@ func (c *Config) SetupHTTPMiddleware(logger *slog.Logger, handler http.Handler) 
 		WithTraceID: c.Observability.Tracing.WithTraceID,
 
 		// Configure what to log
+		WithRequestID:      true,
+		WithUserAgent:      true,
 		WithRequestBody:    c.Logging.HTTP.RequestBody,
 		WithResponseBody:   c.Logging.HTTP.ResponseBody,
 		WithRequestHeader:  c.Logging.HTTP.RequestHeaders,

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/appkins-org/helm-api/api"
 	"github.com/appkins-org/helm-api/internal/config"
 	"github.com/appkins-org/helm-api/internal/template"
 	"github.com/gorilla/schema"
@@ -20,7 +19,7 @@ type handler struct {
 }
 
 // New creates a new template handler.
-func New(logger *slog.Logger, cfg *config.Config) api.Handler {
+func New(logger *slog.Logger, cfg *config.Config) http.Handler {
 	return &handler{
 		logger:  logger,
 		config:  cfg,
