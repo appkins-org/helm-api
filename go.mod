@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/gorilla/schema v1.4.1
-	github.com/samber/slog-http v1.7.0
+	github.com/samber/slog-http v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.18.3
 )
