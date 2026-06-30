@@ -42,7 +42,7 @@ jobs:
         ko build ./cmd/helm --platform=all --bare --push
     - name: Run GoReleaser
       if: ${{ startsWith(github.ref, 'refs/tags/') }}
-      uses: goreleaser/goreleaser-action@7ec5c2b0c6cdda6e8bbb49444bc797dd33d74dd8 # v5.0.0
+      uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
       with:
         args: release --clean
       env:
