@@ -3,7 +3,7 @@ module github.com/appkins-org/helm-api
 go 1.24.4
 
 require (
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/gorilla/schema v1.4.1
 	github.com/samber/slog-http v1.7.0
 	gopkg.in/yaml.v3 v3.0.1
